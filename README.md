@@ -4,22 +4,10 @@
 
 This service gives the Vet2Employ simulated working environment a realistic, evidence based work culture. It turns the Programme Work Brief, the brand guidelines and 521 researched UK job roles into a governed knowledge base, then lets the AI Manager (running on OpenRouter) issue tasks and reply to candidates **only from that evidence**. Every claim carries a citation, every response is verified before it leaves the service, and when the evidence cannot support a request the service abstains instead of guessing.
 
-Built by Phexara Limited for the Vet2Employ platform.
+The realism of the simulation is the entire product, and the AI Manager must behave the way a real manager in that role would. A language model on its own cannot meet that bar. It invents colleagues, deadlines, tools and file names, and every invented detail breaks the realism and undermines the evidence a Verified Profile is built on. This service closes that gap. It keeps the AI Manager inside the facts the programme has defined (clients, activities, deliverables, due points, rubrics, naming rules) and enriches them with what real UK employers actually expect from each role (responsibilities, tools, team structures, culture). Nothing is generated from memory.
 
-<p>
-<img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-1f6feb">
-<img alt="FastAPI" src="https://img.shields.io/badge/api-FastAPI-0f766e">
-<img alt="PostgreSQL with pgvector" src="https://img.shields.io/badge/store-PostgreSQL%20%2B%20pgvector-334155">
-<img alt="OpenRouter" src="https://img.shields.io/badge/models-OpenRouter-6d28d9">
-</p>
 
-## Why this service exists
-
-The Plain English Report states the quality bar plainly: the realism of the simulation is the entire product, and the AI Manager must behave the way a real manager in that role would. A language model on its own cannot meet that bar. It invents colleagues, deadlines, tools and file names, and every invented detail breaks the realism and undermines the evidence a Verified Profile is built on.
-
-This service closes that gap. It keeps the AI Manager inside the facts the programme has defined (clients, activities, deliverables, due points, rubrics, naming rules) and enriches them with what real UK employers actually expect from each role (responsibilities, tools, team structures, culture). Nothing is generated from memory.
-
-## Background study: the job simulation landscape
+## BACKGROUND STUDY: THE JOB SIMULATION MARKET
 
 Vet2Employ enters an established market. Several platforms already help students and career changers gain exposure to professional work. A review of six of the most visible platforms in the UK and international market shows what the category does well and where the gap remains that Vet2Employ is designed to close.
 
