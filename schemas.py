@@ -1,108 +1,104 @@
-"""Public response models. These define the OpenAPI contract the platform integrates with."""
+"""Structured output contracts returned by the AI Manager.
+
+Every factual item carries ``evidence_ids`` so that verification can check each claim
+against the exact passages it relies on. These models are also the public response
+schema of the API, so field names are stable and documented.
+"""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from v2e_rag.llm.schemas import GeneratedTask, ManagerReply
+CompetencyName = Literal[
+    "Technical Quality", "Problem Solving", "Communication", "Delivery", "Professionalism"
+]
 
 
-class EvidenceReference(BaseModel):
-    evidence_id: str = Field(
-        description="Short id used in citations within this response, such as E3."
+class _Model(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+
+class GroundedItem(_Model):
+    text: str = Field(min_length=1, max_length=1200, description="One self contained statement.")
+    evidence_ids: list[str] = Field(
+        default_factory=list, description="Evidence entries that state this item."
     )
-    chunk_id: str = Field(description="Stable knowledge base chunk id. Use it with /v1/verify.")
-    citation: str = Field(description="Human readable source label.")
-    source_type: str
-    facet: str
-    source_url: str | None = None
-    retrieval_purpose: str
-    score: float
 
 
-class ViolationOut(BaseModel):
+class TaskDeliverable(_Model):
+    reference: str | None = Field(
+        default=None, description="Deliverable reference from the brief, such as D2."
+    )
+    name: str = Field(min_length=1, max_length=200)
+    format: str | None = Field(default=None, max_length=200)
+    file_name: str | None = Field(
+        default=None, max_length=200, description="Exactly as the brief specifies."
+    )
+    due: str | None = Field(default=None, max_length=100)
+    acceptance_criteria: list[GroundedItem] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class CompetencyFocus(_Model):
+    competency: CompetencyName
+    weight_percent: int | None = Field(default=None, ge=0, le=100)
+    why: str = Field(min_length=1, max_length=600)
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class TaskSchedule(_Model):
+    assigned_on: str | None = Field(default=None, max_length=60)
+    due: str | None = Field(default=None, max_length=100)
+    estimated_effort_hours: float | None = Field(default=None, ge=0, le=80)
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class GeneratedTask(_Model):
+    title: str = Field(min_length=3, max_length=160)
+    sender_role: str = Field(
+        min_length=2, max_length=80, description="Role of the persona sending the message."
+    )
+    priority: Literal["P0", "P1", "P2"]
+    message: str = Field(
+        min_length=20,
+        max_length=2500,
+        description="The in character message the candidate receives.",
+    )
+    summary: GroundedItem
+    context: list[GroundedItem] = Field(default_factory=list)
+    objectives: list[GroundedItem] = Field(min_length=1)
+    steps: list[GroundedItem] = Field(min_length=1)
+    deliverables: list[TaskDeliverable] = Field(default_factory=list)
+    tools_and_technologies: list[GroundedItem] = Field(default_factory=list)
+    collaboration: list[GroundedItem] = Field(default_factory=list)
+    complications: list[GroundedItem] = Field(default_factory=list)
+    competencies: list[CompetencyFocus] = Field(default_factory=list)
+    schedule: TaskSchedule
+    open_questions: list[str] = Field(default_factory=list)
+
+
+ReplyIntent = Literal["answer", "clarify", "redirect", "feedback", "acknowledge", "escalate"]
+
+
+class ManagerReply(_Model):
+    reply: str = Field(min_length=1, max_length=2500)
+    intent: ReplyIntent
+    claims: list[GroundedItem] = Field(default_factory=list)
+    needs_human_review: bool = False
+    review_reason: str | None = Field(default=None, max_length=500)
+
+
+JudgeVerdictLabel = Literal["SUPPORTED", "PARTIAL", "UNSUPPORTED", "NOT_A_CLAIM"]
+
+
+class JudgeVerdict(_Model):
     claim_id: str
-    check: str
-    severity: str
-    message: str
-    details: list[str] = Field(default_factory=list)
+    verdict: JudgeVerdictLabel
+    unsupported_details: list[str] = Field(default_factory=list)
+    rationale: str = ""
 
 
-class VerificationOut(BaseModel):
-    verdict: str = Field(description="approved, approved_with_pruning, abstained or rejected.")
-    groundedness: float = Field(
-        description="Share of factual claims supported by evidence before pruning."
-    )
-    claims_total: int
-    claims_factual: int
-    claims_supported: int
-    violations: list[ViolationOut]
-    pruned: list[str]
-    checks_run: list[str]
-    repair_attempts: int
-    entailment_model: str | None = None
-    entailment_error: str | None = None
-
-
-class GenerationMeta(BaseModel):
-    audit_id: str = Field(description="Audit record id. Quote it when reporting an issue.")
-    model: str
-    prompt_version: str
-    latency_ms: int
-    usage: dict[str, int] = Field(default_factory=dict)
-    diagnostics: dict[str, Any] = Field(default_factory=dict)
-
-
-class TaskResponse(BaseModel):
-    task: GeneratedTask
-    evidence: list[EvidenceReference]
-    verification: VerificationOut
-    meta: GenerationMeta
-
-
-class ManagerReplyResponse(BaseModel):
-    reply: ManagerReply
-    evidence: list[EvidenceReference]
-    verification: VerificationOut
-    meta: GenerationMeta
-
-
-class RetrievedEvidence(EvidenceReference):
-    text: str
-
-
-class RetrieveResponse(BaseModel):
-    evidence: list[RetrievedEvidence]
-    grounding_prompt: str = Field(
-        description="Ready to use system prompt block containing the grounding rules and this evidence."
-    )
-    diagnostics: dict[str, Any] = Field(default_factory=dict)
-
-
-class VerifyResponse(BaseModel):
-    verification: VerificationOut
-    evidence: list[EvidenceReference]
-
-
-class TrackOut(BaseModel):
-    code: str
-    name: str
-    role_family: str
-    manager_title: str
-
-
-class CatalogResponse(BaseModel):
-    tracks: list[TrackOut]
-    role_families: list[str]
-    sectors: list[str]
-    job_levels: list[str]
-    task_types: list[str]
-    knowledge_base: dict[str, Any]
-
-
-class ErrorResponse(BaseModel):
-    error: str
-    message: str
-    details: dict[str, Any] = Field(default_factory=dict)
+class JudgeOutput(_Model):
+    verdicts: list[JudgeVerdict]
