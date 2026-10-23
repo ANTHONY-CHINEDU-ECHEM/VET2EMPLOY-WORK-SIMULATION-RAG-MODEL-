@@ -1,0 +1,48 @@
+# Vet2Employ week one tracks.
+#
+# Source: Vet2Employ Week One Work Brief, section 6.4 (Track overview) and Part B.
+# brief_heading_patterns are regular expressions matched against level one headings of
+# the Work Brief so that every chunk inside a track section is tagged with its track code.
+# Names of people, clients and practices are NOT configured here on purpose: they are read
+# from the knowledge base at query time so that nothing is invented.
+
+tracks:
+  DA:
+    name: Data Analyst
+    role_family: data_analyst
+    file_code: DA
+    brief_heading_patterns:
+      - 'Track\s*1\s*(:|of\s*4)'
+      - '^\s*Data\s+Analyst\s*$'
+    manager_title: Track Supervisor
+    retrieval_keywords: [data profiling, data quality, KPI, dashboard, SQL, Power BI, reconciliation]
+
+  SE:
+    name: Software Developer and Engineer
+    role_family: software_developer
+    file_code: SE
+    brief_heading_patterns:
+      - 'Track\s*2\s*(:|of\s*4)'
+      - '^\s*Software\s+Developer\b.*\bEngineer\s*$'
+    manager_title: Track Supervisor
+    retrieval_keywords: [API, user stories, repository, continuous integration, testing, code review]
+
+  CY:
+    name: Cybersecurity
+    role_family: cybersecurity
+    file_code: CY
+    brief_heading_patterns:
+      - 'Track\s*3\s*(:|of\s*4)'
+      - '^\s*Cybersecurity\s*$'
+    manager_title: Track Supervisor
+    retrieval_keywords: [incident, phishing, risk register, controls, security posture, investigation]
+
+  DE:
+    name: Data Engineering
+    role_family: data_engineer
+    file_code: DE
+    brief_heading_patterns:
+      - 'Track\s*4\s*(:|of\s*4)'
+      - '^\s*Data\s+Engineering\s*$'
+    manager_title: Track Supervisor
+    retrieval_keywords: [pipeline, ingestion, data model, orchestration, data quality tests, warehouse]

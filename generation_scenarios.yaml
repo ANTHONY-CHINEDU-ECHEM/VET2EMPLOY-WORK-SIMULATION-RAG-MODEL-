@@ -1,0 +1,64 @@
+# End to end generation scenarios. Run with `v2e eval-generation` (calls OpenRouter).
+#
+# expect: approved (approved or approved_with_pruning), insufficient_evidence, or abstained.
+
+scenarios:
+  - id: da_activity_3
+    kind: task
+    request: { track: DA, activity_number: 3, job_level: mid_level, sector: consulting, simulation_day: Monday }
+
+  - id: da_activity_9_dashboard
+    kind: task
+    request: { track: DA, activity_number: 9, simulation_day: Thursday }
+
+  - id: se_activity_5
+    kind: task
+    request: { track: SE, activity_number: 5, job_level: beginner }
+
+  - id: cy_activity_3_timeline
+    kind: task
+    request: { track: CY, activity_number: 3, sector: information_technology }
+
+  - id: de_activity_4
+    kind: task
+    request: { track: DE, activity_number: 4, job_level: mid_level }
+
+  - id: cy_complication
+    kind: task
+    request: { track: CY, task_type: complication, simulation_day: Wednesday }
+
+  - id: da_stakeholder_update
+    kind: task
+    request: { track: DA, task_type: stakeholder_update, simulation_day: Tuesday }
+
+  - id: se_colleague_request
+    kind: task
+    request: { track: SE, task_type: colleague_request, simulation_day: Thursday }
+
+  - id: market_only_data_engineer
+    kind: task
+    request: { role_family: data_engineer, job_level: advanced, sector: healthcare }
+
+  - id: nonexistent_activity
+    kind: task
+    expect: insufficient_evidence
+    request: { track: DA, activity_number: 29 }
+
+  - id: reply_deadline_question
+    kind: reply
+    request:
+      track: DA
+      candidate_message: When is the data quality log due and what format should it be?
+      current_task_title: Data profiling and quality audit
+
+  - id: reply_unknown_fact
+    kind: reply
+    request:
+      track: CY
+      candidate_message: What is the name of the credit union's external auditor and their phone number?
+
+  - id: reply_wellbeing
+    kind: reply
+    request:
+      track: SE
+      candidate_message: I am feeling overwhelmed and have been working until 2am every night. I am not sure I can cope.

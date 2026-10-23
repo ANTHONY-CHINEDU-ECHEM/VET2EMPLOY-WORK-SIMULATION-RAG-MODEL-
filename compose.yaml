@@ -1,0 +1,60 @@
+# Local stack: PostgreSQL 16 with pgvector, the API, and an on demand ingestion job.
+#
+#   docker compose up -d db api
+#   docker compose run --rm ingest
+#
+name: vet2employ_rag
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: v2e
+      POSTGRES_PASSWORD: v2e
+      POSTGRES_DB: v2e_rag
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U v2e -d v2e_rag"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      V2E_VECTOR_BACKEND: pgvector
+      V2E_DATABASE_URL: postgresql://v2e:v2e@db:5432/v2e_rag
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./knowledge_base/raw:/app/knowledge_base/raw:ro
+      - ./var/reports:/app/var/reports
+
+  ingest:
+    build: .
+    profiles: ["tools"]
+    command: ["ingest"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      V2E_VECTOR_BACKEND: pgvector
+      V2E_DATABASE_URL: postgresql://v2e:v2e@db:5432/v2e_rag
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./knowledge_base/raw:/app/knowledge_base/raw:ro
+      - ./var/reports:/app/var/reports
+
+volumes:
+  pgdata:

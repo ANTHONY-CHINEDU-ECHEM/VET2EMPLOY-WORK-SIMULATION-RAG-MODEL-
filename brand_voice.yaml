@@ -1,0 +1,69 @@
+# Brand vocabulary rules applied to every generated message.
+#
+# Source: Vet2Mploy Brand Strategy Portfolio, chapter 4 (Brand Voice and Tone) and
+# Appendix E (Word and Phrase Style Sheet).
+#
+# Each rule flags a term in generated text. allow_if_context lists regular expressions; if
+# any of them matches the surrounding text the term is accepted (for example a TLS
+# certificate in a cybersecurity task is a technical object, not a course credential).
+# replacement is used only as a last resort after the model has had a chance to repair
+# its own wording. {brand_name} is substituted from the V2E_BRAND_NAME setting.
+
+banned_terms:
+  - term: 'VEEP'
+    display: 'VEEP'
+    replacement: '{brand_name}'
+    reason: 'Retired internal name. Never shown to candidates or employers.'
+    case_sensitive: true
+
+  - term: 'chat ?bot'
+    display: 'chatbot'
+    replacement: 'AI Manager'
+    reason: 'Undersells the realism of the in character interaction.'
+
+  - term: 'certificate|certified|certification of completion'
+    display: 'certificate (except technical certificates such as TLS)'
+    replacement: 'Verified Profile'
+    reason: 'The Verified Profile is evidence, not a course completion credential.'
+    allow_if_context:
+      - '(tls|ssl|x\.?509|digital|code signing|server|client|root|signing|public key|security)\s+(certificate|certificates)'
+      - 'certificate (authority|authorities|chain|expiry|renewal|pinning|revocation|management|store)'
+      - '(iso|cyber essentials|professional|industry)\s*\S*\s*(certified|certification)'
+      - '(cissp|cism|comptia|aws|azure|gcp|microsoft|google)\S*\s+(certified|certification|certificate)'
+
+  - term: 'grade|grades|graded|grading'
+    display: 'grade'
+    replacement: 'score'
+    reason: 'Academic connotation the brand avoids.'
+
+  - term: 'gamified|gamification|game'
+    display: 'game, gamified'
+    replacement: 'simulation'
+    reason: 'The simulation must feel real, not like a game.'
+
+  - term: 'guaranteed (hire|job|employment|interview)'
+    display: 'guaranteed hire'
+    replacement: 'verified evidence employers can trust'
+    reason: 'The platform never controls an employer hiring decision.'
+
+  - term: 'revolutionary|best in class|best-in-class|world class|world-class'
+    display: 'revolutionary, best in class, world class'
+    replacement: ''
+    reason: 'Unsupported superlative. Name the mechanism instead.'
+
+  - term: 'placement fee'
+    display: 'placement fee'
+    replacement: 'Hire Success Fee'
+    reason: 'Customer facing term from the style sheet.'
+
+# Phrases that break character. The AI Manager never volunteers that it is an AI model
+# mid simulation; if a candidate asks directly, the dedicated policy in the manager prompt
+# applies instead of this rule.
+character_breaks:
+  - 'as an ai'
+  - 'as a language model'
+  - 'i am an ai'
+  - "i'm an ai"
+  - 'i cannot browse'
+  - 'my training data'
+  - 'knowledge cutoff'

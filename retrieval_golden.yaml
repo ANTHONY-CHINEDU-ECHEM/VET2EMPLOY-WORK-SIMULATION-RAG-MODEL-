@@ -1,0 +1,148 @@
+# Retrieval golden set.
+#
+# Each case lists one or more relevance criteria. A retrieved passage counts as relevant if
+# it satisfies every key of at least one criterion. Criteria use metadata rather than chunk
+# ids so the set stays valid after re-chunking.
+#
+# Supported keys: source_type, facet, track, section_contains, company, activity_number,
+# text_contains (string or list of strings that must all appear).
+
+cases:
+  - id: da_client_sponsor
+    query: Who is the client sponsor for the Data Analyst engagement and what pressure are they under?
+    filters: { track: DA }
+    expected:
+      - { section_contains: "7.2 The client" }
+
+  - id: da_quality_log_deliverable
+    query: What must the data quality log contain and when is it due?
+    filters: { track: DA }
+    expected:
+      - { facet: track_deliverables, text_contains: "Data Quality Log" }
+      - { activity_number: 3 }
+
+  - id: da_store_codes
+    query: store codes such as KL017 and kl 17 refer to the same store
+    filters: { track: DA }
+    expected:
+      - { text_contains: "KL017" }
+
+  - id: da_activity_profiling
+    query: data profiling and quality audit steps referential integrity
+    filters: { track: DA }
+    expected:
+      - { activity_number: 3 }
+
+  - id: programme_naming_convention
+    query: file naming convention for submitted deliverables
+    expected:
+      - { section_contains: "5.1 Naming convention" }
+      - { text_contains: "V2E_" }
+
+  - id: programme_daily_update
+    query: when is the daily written update due and what does it include
+    expected:
+      - { text_contains: "daily" , source_type: programme_brief }
+
+  - id: programme_escalation
+    query: how long can I stay blocked before I escalate to my supervisor
+    expected:
+      - { text_contains: "two hours" }
+
+  - id: programme_competencies
+    query: competency framework weights technical quality communication delivery professionalism
+    expected:
+      - { section_contains: "6.1" }
+      - { facet: track_rubric }
+
+  - id: programme_late_submission
+    query: what happens if I submit work late without an extension
+    expected:
+      - { section_contains: "5.4" }
+
+  - id: programme_ai_tools
+    query: rules for using artificial intelligence tools and declaring them
+    expected:
+      - { section_contains: "4.3" }
+
+  - id: programme_computer_misuse
+    query: which systems am I allowed to test and the Computer Misuse Act
+    expected:
+      - { text_contains: "Computer Misuse Act" }
+
+  - id: se_client_problem
+    query: Northwold Couriers parcel tracking and contact centre status enquiries
+    filters: { track: SE }
+    expected:
+      - { track: SE, facet: [track_client, track_materials] }
+
+  - id: se_lifecycle_events
+    query: status events lifecycle transition table idempotent endpoint
+    filters: { track: SE }
+    expected:
+      - { activity_number: 6 }
+      - { text_contains: "idempotent" }
+
+  - id: cy_incident
+    query: business email compromise and attempted payment fraud at the credit union
+    filters: { track: CY }
+    expected:
+      - { track: CY, facet: [track_client, track_materials] }
+
+  - id: cy_risk_register
+    query: build a risk register for the credit union
+    filters: { track: CY }
+    expected:
+      - { activity_number: 7 }
+      - { facet: track_deliverables, text_contains: "Risk" }
+
+  - id: de_client
+    query: Voltaway charging revenue and reliability data from disconnected sources
+    filters: { track: DE }
+    expected:
+      - { track: DE, facet: [track_client, track_materials] }
+
+  - id: brand_avoid_words
+    query: which words should the AI Manager avoid in candidate messages
+    expected:
+      - { facet: brand_voice }
+
+  - id: brand_feedback_tone
+    query: tone for giving feedback after a low score
+    expected:
+      - { facet: brand_voice }
+
+  - id: product_verified_profile
+    query: what does the verified profile contain and what is the trust score
+    expected:
+      - { source_type: product_overview }
+
+  - id: market_siemens_internship
+    query: Siemens cyber security internship day to day responsibilities
+    filters: { role_family: cybersecurity }
+    expected:
+      - { company: "Siemens" }
+
+  - id: market_da_tools
+    query: Power BI SQL dashboards tools data analyst
+    filters: { role_family: data_analyst, source_types: [job_market] }
+    expected:
+      - { facet: tech_stack, text_contains: "Power BI" }
+
+  - id: market_lloyds_insider_risk
+    query: Lloyds Banking Group software engineer insider risk detection
+    filters: { role_family: software_developer }
+    expected:
+      - { company: "Lloyds" }
+
+  - id: market_de_pipelines
+    query: Azure Data Factory Databricks pipelines data engineer
+    filters: { role_family: data_engineer, source_types: [job_market] }
+    expected:
+      - { facet: tech_stack, text_contains: "Databricks" }
+
+  - id: methodology_rating
+    query: how is the overall Indeed company rating calculated from star ratings
+    expected:
+      - { source_type: methodology }
+      - { facet: culture_ratings }

@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vet2employ_rag"
+version = "1.0.0"
+description = "Grounded retrieval augmented generation service that powers the Vet2Employ AI Manager through OpenRouter."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary. Copyright Phexara Limited." }
+authors = [{ name = "Phexara Limited" }]
+dependencies = [
+    "fastapi>=0.115,<1.0",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7,<3.0",
+    "pydantic-settings>=2.3",
+    "psycopg[binary,pool]>=3.2",
+    "pgvector>=0.3",
+    "httpx>=0.27",
+    "tenacity>=8.3",
+    "numpy>=1.26",
+    "openpyxl>=3.1",
+    "pdfplumber>=0.11",
+    "python-docx>=1.1",
+    "pyyaml>=6.0",
+    "rapidfuzz>=3.9",
+    "structlog>=24.1",
+    "prometheus-client>=0.20",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "types-PyYAML",
+]
+
+[project.scripts]
+v2e = "v2e_rag.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+v2e_rag = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integration: tests that need PostgreSQL with pgvector (set V2E_TEST_DATABASE_URL)",
+    "knowledge_base: tests that read the real knowledge base files",
+]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501", "RUF001", "RUF002", "RUF003", "B008"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+warn_unused_ignores = true
+ignore_missing_imports = true

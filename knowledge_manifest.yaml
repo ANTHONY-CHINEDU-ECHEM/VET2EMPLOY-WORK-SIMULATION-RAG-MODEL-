@@ -1,0 +1,69 @@
+# Knowledge base manifest.
+#
+# Tells the ingestion pipeline how to interpret each source file. Files are matched by
+# glob pattern against the file name (case insensitive). The first matching entry wins.
+#
+# source_type controls authority and routing:
+#   programme_brief        rules of the simulation (highest authority)
+#   brand_guideline        voice, tone and vocabulary for every candidate facing message
+#   product_overview       what the platform is and how candidates experience it
+#   engineering_reference  architecture material, excluded from task generation by default
+#
+# layout controls parsing:
+#   report  numbered sections with headings detected from font size and weight
+#   deck    slide style pages where each page title is the section heading
+
+documents:
+  - match: "*Work_Brief*.pdf"
+    title: "Vet2Employ Week One Work Brief"
+    source_type: programme_brief
+    layout: report
+
+  - match: "*Plain_English_Report*.docx"
+    title: "Vet2Employ Plain English Report"
+    source_type: product_overview
+    layout: report
+
+  - match: "*Brand_Strategy*.pdf"
+    title: "Vet2Mploy Brand Strategy Portfolio"
+    source_type: brand_guideline
+    layout: deck
+
+  - match: "*Knowledge_Graph*.pdf"
+    title: "VEEP Knowledge Graph Design and Deployment"
+    source_type: engineering_reference
+    layout: deck
+
+# Labour market workbooks. Role family, sector and collection date are inferred from the
+# file name. Add an override when a file name does not follow the usual pattern.
+workbooks:
+  match: "*.xlsx"
+  overrides: []
+  # Example:
+  # overrides:
+  #   - match: "Quantum_Roles_2026.xlsx"
+  #     role_families: [data_engineer]
+  #     sectors: [information_technology]
+  #     collected_on: 2026-11-02
+
+# Facet rules map a section path to a facet. Rules are evaluated in order and the first
+# regular expression that matches the full section path (case insensitive) wins.
+facet_rules:
+  programme_brief:
+    - { pattern: 'welcome note', facet: supervisor_voice }
+    - { pattern: 'required deliverables', facet: track_deliverables }
+    - { pattern: 'assessment rubric', facet: track_rubric }
+    - { pattern: 'stretch goals', facet: track_stretch }
+    - { pattern: 'sequential activities|activity\s*\d+\s*:', facet: track_activity }
+    - { pattern: 'week at a glance', facet: track_schedule }
+    - { pattern: 'working materials', facet: track_materials }
+    - { pattern: 'the client|problem you are solving|your mission this week|client engagement', facet: track_client }
+    - { pattern: 'appendi|template|glossary|checklist', facet: templates }
+    - { pattern: '.*', facet: programme_rules }
+  product_overview:
+    - { pattern: '.*', facet: product }
+  brand_guideline:
+    - { pattern: 'voice|tone|language|style sheet|word & phrase|ai manager|messaging', facet: brand_voice }
+    - { pattern: '.*', facet: brand_general }
+  engineering_reference:
+    - { pattern: '.*', facet: engineering }
