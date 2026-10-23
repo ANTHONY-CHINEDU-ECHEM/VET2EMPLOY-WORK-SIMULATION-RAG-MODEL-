@@ -1,217 +1,140 @@
-"""Embedding providers.
-
-``OpenRouterEmbedder`` calls the OpenRouter embeddings endpoint (OpenAI compatible) so the
-platform keeps a single provider key and billing account. ``HashingEmbedder`` is a
-deterministic, dependency free embedder for offline development and tests only.
-``CachedEmbedder`` wraps any provider with a persistent cache keyed by model and content hash.
-"""
+"""Storage contract shared by the PostgreSQL (pgvector) and in memory backends."""
 
 from __future__ import annotations
 
-import hashlib
-import math
-import re
-from collections import OrderedDict
-from itertools import pairwise
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Any, Protocol
 
-import httpx
-import numpy as np
-from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential_jitter
-
-from v2e_rag.domain.models import sha256_hex
-from v2e_rag.observability.logging import get_logger
-from v2e_rag.observability.metrics import EMBEDDING_REQUESTS
-from v2e_rag.store.base import VectorStore
-from v2e_rag.store.lexical import tokenize
-
-log = get_logger(__name__)
+from v2e_rag.domain.models import Chunk, RoleRecord, SourceDocument
 
 
-class EmbeddingError(RuntimeError):
-    pass
+@dataclass(frozen=True)
+class SearchFilters:
+    """Metadata filters applied inside both retrieval channels.
 
-
-class Embedder(Protocol):
-    model: str
-    dimensions: int
-
-    async def embed_documents(self, texts: list[str]) -> list[list[float]]: ...
-
-    async def embed_query(self, text: str) -> list[float]: ...
-
-    async def aclose(self) -> None: ...
-
-
-def _l2(vector: list[float]) -> list[float]:
-    norm = math.sqrt(sum(v * v for v in vector))
-    return [v / norm for v in vector] if norm > 0 else vector
-
-
-def _retryable(exc: BaseException) -> bool:
-    if isinstance(exc, httpx.TransportError | httpx.TimeoutException):
-        return True
-    if isinstance(exc, httpx.HTTPStatusError):
-        return exc.response.status_code in (408, 409, 425, 429, 500, 502, 503, 504)
-    return False
-
-
-class OpenRouterEmbedder:
-    def __init__(
-        self,
-        api_key: str,
-        model: str,
-        dimensions: int,
-        base_url: str = "https://openrouter.ai/api/v1",
-        batch_size: int = 64,
-        send_dimensions: bool = False,
-        timeout: float = 60.0,
-        max_retries: int = 3,
-        app_url: str = "",
-        app_title: str = "",
-        data_collection: str = "deny",
-        client: httpx.AsyncClient | None = None,
-    ) -> None:
-        self.model = model
-        self.dimensions = dimensions
-        self.batch_size = max(1, batch_size)
-        self.send_dimensions = send_dimensions
-        self.max_retries = max_retries
-        self.data_collection = data_collection
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        if app_url:
-            headers["HTTP-Referer"] = app_url
-        if app_title:
-            headers["X-Title"] = app_title
-        self._client = client or httpx.AsyncClient(
-            base_url=base_url.rstrip("/"), headers=headers, timeout=timeout
-        )
-        self._owns_client = client is None
-        self._query_cache: OrderedDict[str, list[float]] = OrderedDict()
-
-    async def aclose(self) -> None:
-        if self._owns_client:
-            await self._client.aclose()
-
-    async def _embed_batch(self, texts: list[str]) -> list[list[float]]:
-        payload: dict[str, object] = {
-            "model": self.model,
-            "input": texts,
-            "provider": {"data_collection": self.data_collection},
-        }
-        if self.send_dimensions:
-            payload["dimensions"] = self.dimensions
-        async for attempt in AsyncRetrying(
-            stop=stop_after_attempt(self.max_retries + 1),
-            wait=wait_exponential_jitter(initial=1, max=20),
-            retry=retry_if_exception(_retryable),
-            reraise=True,
-        ):
-            with attempt:
-                response = await self._client.post("/embeddings", json=payload)
-                response.raise_for_status()
-        body = response.json()
-        if "error" in body:
-            raise EmbeddingError(f"OpenRouter embeddings error: {body['error']}")
-        data = sorted(body.get("data", []), key=lambda d: d.get("index", 0))
-        if len(data) != len(texts):
-            raise EmbeddingError(f"Expected {len(texts)} embeddings, received {len(data)}")
-        vectors = [list(map(float, d["embedding"])) for d in data]
-        for vector in vectors:
-            if len(vector) != self.dimensions:
-                raise EmbeddingError(
-                    f"Model {self.model} returned {len(vector)} dimensions; configured {self.dimensions}. "
-                    "Set V2E_EMBEDDING_DIMENSIONS to match the model."
-                )
-        EMBEDDING_REQUESTS.labels(model=self.model).inc()
-        return [_l2(v) for v in vectors]
-
-    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        out: list[list[float]] = []
-        for start in range(0, len(texts), self.batch_size):
-            out.extend(await self._embed_batch(texts[start : start + self.batch_size]))
-        return out
-
-    async def embed_query(self, text: str) -> list[float]:
-        key = sha256_hex(text)
-        if key in self._query_cache:
-            self._query_cache.move_to_end(key)
-            return self._query_cache[key]
-        vector = (await self._embed_batch([text]))[0]
-        self._query_cache[key] = vector
-        if len(self._query_cache) > 2048:
-            self._query_cache.popitem(last=False)
-        return vector
-
-
-class HashingEmbedder:
-    """Deterministic feature hashing of stemmed unigrams and bigrams.
-
-    Produces stable vectors with meaningful lexical similarity. It is not a semantic model
-    and must never be used in production (the settings validator enforces this).
+    Every list is an OR within the field and an AND across fields. Empty lists mean no
+    constraint. ``role_families`` and ``sectors`` match when the chunk shares any value.
+    ``include_untagged_role_family`` admits chunks that carry no role family at all, which
+    is how programme wide rules sit alongside track specific evidence.
     """
 
-    def __init__(self, dimensions: int = 384) -> None:
-        self.model = f"hashing-{dimensions}"
-        self.dimensions = dimensions
+    source_types: tuple[str, ...] = ()
+    facets: tuple[str, ...] = ()
+    role_families: tuple[str, ...] = ()
+    sectors: tuple[str, ...] = ()
+    job_levels: tuple[str, ...] = ()
+    tracks: tuple[str, ...] = ()
+    document_ids: tuple[str, ...] = ()
+    exclude_source_types: tuple[str, ...] = ()
+    include_untagged_role_family: bool = False
+    include_untracked: bool = False
+    only_untracked: bool = False
+    activity_numbers: tuple[int, ...] = ()
 
-    async def aclose(self) -> None:
-        return None
-
-    def _vector(self, text: str) -> list[float]:
-        vec = np.zeros(self.dimensions, dtype=np.float32)
-        tokens = tokenize(text)
-        features = tokens + [f"{a}_{b}" for a, b in pairwise(tokens)]
-        for feature in features:
-            digest = hashlib.blake2b(feature.encode("utf-8"), digest_size=8).digest()
-            index = int.from_bytes(digest[:4], "little") % self.dimensions
-            sign = 1.0 if digest[4] & 1 else -1.0
-            vec[index] += sign
-        norm = float(np.linalg.norm(vec))
-        return (vec / norm).tolist() if norm > 0 else vec.tolist()
-
-    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return [self._vector(t) for t in texts]
-
-    async def embed_query(self, text: str) -> list[float]:
-        return self._vector(text)
-
-
-class CachedEmbedder:
-    """Adds a persistent content hash cache in front of any embedder."""
-
-    def __init__(self, inner: Embedder, store: VectorStore) -> None:
-        self.inner = inner
-        self.store = store
-        self.model = inner.model
-        self.dimensions = inner.dimensions
-
-    async def aclose(self) -> None:
-        await self.inner.aclose()
-
-    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        hashes = [sha256_hex(t) for t in texts]
-        cached = await self.store.cached_embeddings(self.model, list(dict.fromkeys(hashes)))
-        first_index: dict[str, int] = {}
-        for i, h in enumerate(hashes):
-            if h not in cached:
-                first_index.setdefault(h, i)
-        missing = list(first_index.values())
-        if missing:
-            fresh = await self.inner.embed_documents([texts[i] for i in missing])
-            new_items = {hashes[i]: vector for i, vector in zip(missing, fresh, strict=True)}
-            await self.store.cache_embeddings(self.model, new_items)
-            cached.update(new_items)
-        log.info("embeddings_resolved", total=len(texts), embedded=len(missing))
-        return [cached[h] for h in hashes]
-
-    async def embed_query(self, text: str) -> list[float]:
-        return await self.inner.embed_query(text)
+    def matches(self, chunk: Chunk) -> bool:
+        if self.source_types and chunk.source_type.value not in self.source_types:
+            return False
+        if self.exclude_source_types and chunk.source_type.value in self.exclude_source_types:
+            return False
+        if self.facets and chunk.facet.value not in self.facets:
+            return False
+        if self.role_families:
+            if chunk.role_families:
+                if not set(chunk.role_families) & set(self.role_families):
+                    return False
+            elif not self.include_untagged_role_family:
+                return False
+        if self.sectors and not set(chunk.sectors) & set(self.sectors):
+            return False
+        if self.job_levels and (
+            chunk.job_level is None or chunk.job_level.value not in self.job_levels
+        ):
+            return False
+        if self.only_untracked and chunk.track is not None:
+            return False
+        if self.tracks:
+            if chunk.track is None:
+                if not self.include_untracked:
+                    return False
+            elif chunk.track not in self.tracks:
+                return False
+        if (
+            self.activity_numbers
+            and chunk.metadata.get("activity_number") not in self.activity_numbers
+        ):
+            return False
+        return not (self.document_ids and chunk.document_id not in self.document_ids)
 
 
-_WS = re.compile(r"\s+")
+@dataclass
+class ScoredChunk:
+    chunk: Chunk
+    score: float
 
 
-def prepare_embedding_text(text: str, max_chars: int = 24000) -> str:
-    """Collapse whitespace and cap length below provider input limits."""
-    return _WS.sub(" ", text).strip()[:max_chars]
+@dataclass
+class StoreStats:
+    documents: int = 0
+    chunks: int = 0
+    role_records: int = 0
+    by_source_type: dict[str, int] = field(default_factory=dict)
+    by_facet: dict[str, int] = field(default_factory=dict)
+    by_role_family: dict[str, int] = field(default_factory=dict)
+    by_sector: dict[str, int] = field(default_factory=dict)
+    by_track: dict[str, int] = field(default_factory=dict)
+    embedding_model: str | None = None
+    embedding_dimensions: int | None = None
+
+
+class VectorStore(Protocol):
+    """Persistence and search operations required by ingestion and retrieval."""
+
+    async def open(self) -> None: ...
+
+    async def close(self) -> None: ...
+
+    async def health(self) -> dict[str, Any]: ...
+
+    async def get_document(self, document_id: str) -> SourceDocument | None: ...
+
+    async def list_documents(self) -> list[SourceDocument]: ...
+
+    async def replace_document(
+        self,
+        document: SourceDocument,
+        chunks: list[Chunk],
+        embeddings: list[list[float]],
+        records: list[RoleRecord],
+        embedding_model: str,
+    ) -> None: ...
+
+    async def delete_document(self, document_id: str) -> None: ...
+
+    async def semantic_search(
+        self, embedding: list[float], filters: SearchFilters, limit: int
+    ) -> list[ScoredChunk]: ...
+
+    async def lexical_search(
+        self, query: str, filters: SearchFilters, limit: int
+    ) -> list[ScoredChunk]: ...
+
+    async def get_chunks(self, chunk_ids: list[str]) -> list[Chunk]: ...
+
+    async def role_records(
+        self,
+        role_families: tuple[str, ...] = (),
+        sectors: tuple[str, ...] = (),
+        job_levels: tuple[str, ...] = (),
+    ) -> list[RoleRecord]: ...
+
+    async def stats(self) -> StoreStats: ...
+
+    async def cached_embeddings(
+        self, model: str, content_hashes: list[str]
+    ) -> dict[str, list[float]]: ...
+
+    async def cache_embeddings(self, model: str, items: dict[str, list[float]]) -> None: ...
+
+    async def record_audit(self, entry: dict[str, Any]) -> None: ...
+
+    async def record_ingestion_run(self, entry: dict[str, Any]) -> None: ...
