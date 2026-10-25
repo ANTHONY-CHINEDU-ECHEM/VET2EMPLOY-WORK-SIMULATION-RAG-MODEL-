@@ -2,8 +2,24 @@
 #
 #   docker compose up -d db api
 #   docker compose run --rm ingest
+#   docker compose run --rm api doctor
 #
+# For local development only: the database password is fixed and the port is published.
 name: vet2employ_rag
+
+x-service-defaults: &service-defaults
+  build: .
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    V2E_VECTOR_BACKEND: pgvector
+    V2E_DATABASE_URL: postgresql://v2e:v2e@db:5432/v2e_rag
+  depends_on:
+    db:
+      condition: service_healthy
+  security_opt:
+    - no-new-privileges:true
 
 services:
   db:
@@ -13,7 +29,7 @@ services:
       POSTGRES_PASSWORD: v2e
       POSTGRES_DB: v2e_rag
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -21,37 +37,33 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+    restart: unless-stopped
 
   api:
-    build: .
-    env_file:
-      - path: .env
-        required: false
-    environment:
-      V2E_VECTOR_BACKEND: pgvector
-      V2E_DATABASE_URL: postgresql://v2e:v2e@db:5432/v2e_rag
-    depends_on:
-      db:
-        condition: service_healthy
+    <<: *service-defaults
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
-      - ./knowledge_base/raw:/app/knowledge_base/raw:ro
+      # Writable so POST /v1/admin/documents can add files. Mount read only (":ro") in
+      # environments where uploads are disabled and files arrive another way.
+      - ./knowledge_base/raw:/app/knowledge_base/raw
       - ./var/reports:/app/var/reports
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
 
   ingest:
-    build: .
+    <<: *service-defaults
     profiles: ["tools"]
     command: ["ingest"]
-    env_file:
-      - path: .env
-        required: false
-    environment:
-      V2E_VECTOR_BACKEND: pgvector
-      V2E_DATABASE_URL: postgresql://v2e:v2e@db:5432/v2e_rag
-    depends_on:
-      db:
-        condition: service_healthy
     volumes:
       - ./knowledge_base/raw:/app/knowledge_base/raw:ro
       - ./var/reports:/app/var/reports
