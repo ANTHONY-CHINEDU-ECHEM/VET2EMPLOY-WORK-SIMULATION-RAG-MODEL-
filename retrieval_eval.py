@@ -6,6 +6,7 @@ rather than chunk ids, so the golden set survives re-chunking and re-ingestion.
 
 from __future__ import annotations
 
+import asyncio
 import math
 from pathlib import Path
 from typing import Any
@@ -47,7 +48,8 @@ def _matches(item: EvidenceItem, chunk_meta: dict[str, Any], criterion: dict[str
 
 
 async def run_retrieval_eval(container: Any, dataset: Path, k: int = 5) -> dict[str, Any]:
-    cases = yaml.safe_load(dataset.read_text(encoding="utf-8"))["cases"]
+    text = await asyncio.to_thread(dataset.read_text, encoding="utf-8")
+    cases = yaml.safe_load(text)["cases"]
     results = []
     for case in cases:
         request = RetrieveRequest(query=case["query"], limit=k, **case.get("filters", {}))

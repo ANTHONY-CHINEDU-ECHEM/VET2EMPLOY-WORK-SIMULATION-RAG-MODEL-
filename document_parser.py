@@ -22,6 +22,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 from v2e_rag.domain.taxonomy import collapse_whitespace
+from v2e_rag.observability.logging import get_logger
+
+log = get_logger(__name__)
 
 BlockKind = Literal["heading", "text", "table"]
 
@@ -158,11 +161,14 @@ def parse_pdf(path: Path, layout: str = "report") -> list[Block]:
 
     with pdfplumber.open(str(path)) as pdf:
         for page_number, page in enumerate(pdf.pages, start=1):
-            tables = page.find_tables()
-            bboxes = [t.bbox for t in tables]
+            found_tables = page.find_tables()
+            bboxes: list[tuple[float, float, float, float]] = [
+                (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
+                for b in (t.bbox for t in found_tables)
+            ]
 
             def outside_tables(
-                obj: dict[str, Any], boxes: list[tuple[float, ...]] = bboxes
+                obj: dict[str, Any], boxes: list[tuple[float, float, float, float]] = bboxes
             ) -> bool:
                 if obj.get("object_type") != "char":
                     return True
@@ -185,11 +191,14 @@ def parse_pdf(path: Path, layout: str = "report") -> list[Block]:
                     1 - MARGIN_SHARE
                 )
                 lines.append(_Line(text=text, top=top, size=size, bold=bold, in_margin=in_margin))
-            table_blocks = []
-            for table in tables:
+            table_blocks: list[tuple[float, list[list[str]]]] = []
+            for table in found_tables:
                 try:
                     rows = table.extract()
-                except Exception:  # pragma: no cover, pdfplumber edge cases
+                except Exception as exc:  # pragma: no cover, pdfplumber edge cases
+                    log.warning(
+                        "pdf_table_skipped", file=path.name, page=page_number, error=str(exc)
+                    )
                     continue
                 table_blocks.append((float(table.bbox[1]), [[c or "" for c in r] for r in rows]))
             pages.append((page_number, lines, table_blocks))
@@ -251,14 +260,14 @@ def parse_pdf(path: Path, layout: str = "report") -> list[Block]:
         return min(larger + 1, 6)
 
     blocks: list[Block] = []
-    for page_number, lines, tables in pages:
+    for page_number, lines, page_tables in pages:
         events: list[tuple[float, str, Any]] = []
         for ln in lines:
             if _is_boilerplate(ln, boilerplate) or PAGE_NUMBER_RE.match(ln.text):
                 continue
             events.append((ln.top, "line", ln))
-        for top, rows in tables:
-            events.append((top, "table", rows))
+        for top, table_rows in page_tables:
+            events.append((top, "table", table_rows))
         events.sort(key=lambda e: e[0])
 
         pending: list[str] = []

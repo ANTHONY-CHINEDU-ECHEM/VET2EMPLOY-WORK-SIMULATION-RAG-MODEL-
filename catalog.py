@@ -24,6 +24,7 @@ class TrackDefinition:
     brief_heading_patterns: tuple[re.Pattern[str], ...]
     manager_title: str
     retrieval_keywords: tuple[str, ...]
+    activity_count: int | None = None
 
     def matches_heading(self, heading: str) -> bool:
         return any(p.search(heading) for p in self.brief_heading_patterns)
@@ -138,7 +139,11 @@ def _load_tracks(path: Path) -> dict[TrackCode, TrackDefinition]:
             ),
             manager_title=spec.get("manager_title", "Track Supervisor"),
             retrieval_keywords=tuple(spec.get("retrieval_keywords", [])),
+            activity_count=int(spec["activity_count"]) if spec.get("activity_count") else None,
         )
+    families = [t.role_family for t in tracks.values()]
+    if len(families) != len(set(families)):
+        raise ValueError(f"{path}: each track must map to a different role family")
     return tracks
 
 

@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Any
 
 import numpy as np
@@ -21,11 +24,15 @@ from psycopg_pool import AsyncConnectionPool
 
 from v2e_rag.domain.models import Chunk, RoleRecord, SourceDocument
 from v2e_rag.domain.taxonomy import Facet, JobLevel, SourceType
+from v2e_rag.errors import IngestionLockedError
 from v2e_rag.observability.logging import get_logger
 from v2e_rag.store.base import ScoredChunk, SearchFilters, StoreStats
 from v2e_rag.store.lexical import tokenize
 
 log = get_logger(__name__)
+
+# Advisory lock keys. Any 64 bit constants work; these spell "v2e" plus a purpose suffix.
+INGESTION_LOCK_KEY = 0x7632_6500_0000_0001
 
 _CHUNK_COLUMNS = (
     "chunk_id, document_id, source_type, facet, authority, header, body, role_families, sectors, "
@@ -109,7 +116,7 @@ def _vector_to_list(value: Any) -> list[float]:
     """pgvector returns numpy arrays for typed columns and Vector objects for untyped ones."""
     if hasattr(value, "to_list"):
         return [float(x) for x in value.to_list()]
-    return np.asarray(value, dtype=np.float32).tolist()
+    return [float(x) for x in np.asarray(value, dtype=np.float32)]
 
 
 def build_tsquery(query: str, max_terms: int = 32) -> str | None:
@@ -126,9 +133,11 @@ class PgVectorStore:
         min_size: int = 1,
         max_size: int = 10,
         ef_search: int = 80,
+        statement_timeout_ms: int = 15_000,
     ) -> None:
         self.database_url = database_url
         self.ef_search = ef_search
+        self.statement_timeout_ms = statement_timeout_ms
         self._iterative_scan_supported = False
         self.pool = AsyncConnectionPool(
             database_url,
@@ -136,12 +145,13 @@ class PgVectorStore:
             max_size=max_size,
             open=False,
             configure=self._configure,
-            kwargs={"autocommit": False},
+            kwargs={"autocommit": False, "application_name": "vet2employ_rag"},
         )
 
-    @staticmethod
-    async def _configure(conn: AsyncConnection) -> None:
+    async def _configure(self, conn: AsyncConnection) -> None:
         await register_vector_async(conn)
+        # A runaway query must never hold a request (or a pool connection) indefinitely.
+        await conn.execute(f"SET statement_timeout = {int(self.statement_timeout_ms)}")
         await conn.commit()
 
     async def open(self) -> None:
@@ -167,7 +177,9 @@ class PgVectorStore:
                 await conn.execute("SELECT 1")
             return {"backend": "pgvector", "ok": True, "pool": self.pool.get_stats()}
         except Exception as exc:  # pragma: no cover, depends on infrastructure
-            return {"backend": "pgvector", "ok": False, "error": str(exc)}
+            # The exception text can include host names; log it, return only its type.
+            log.warning("store_health_failed", error=str(exc))
+            return {"backend": "pgvector", "ok": False, "error": type(exc).__name__}
 
     # Documents ---------------------------------------------------------------------------
 
@@ -289,9 +301,12 @@ class PgVectorStore:
                         ],
                     )
 
-    async def delete_document(self, document_id: str) -> None:
+    async def delete_document(self, document_id: str) -> bool:
         async with self.pool.connection() as conn, conn.transaction():
-            await conn.execute("DELETE FROM kb_documents WHERE document_id = %s", (document_id,))
+            cur = await conn.execute(
+                "DELETE FROM kb_documents WHERE document_id = %s", (document_id,)
+            )
+            return cur.rowcount > 0
 
     # Search ------------------------------------------------------------------------------
 
@@ -376,7 +391,8 @@ class PgVectorStore:
         async with self.pool.connection() as conn:
 
             async def scalar(sql: str) -> Any:
-                return (await (await conn.execute(sql)).fetchone())[0]
+                row = await (await conn.execute(sql)).fetchone()
+                return row[0] if row else 0
 
             async def grouped(sql: str) -> dict[str, int]:
                 return {
@@ -442,12 +458,30 @@ class PgVectorStore:
 
     async def record_audit(self, entry: dict[str, Any]) -> None:
         payload = json.loads(json.dumps(entry, default=str))
+        core = {
+            "audit_id",
+            "request_id",
+            "created_at",
+            "operation",
+            "status",
+            "request",
+            "evidence",
+            "response",
+            "verification",
+            "model",
+            "latency_ms",
+            "usage",
+            "prompt_version",
+        }
+        details = {k: v for k, v in payload.items() if k not in core}
         async with self.pool.connection() as conn, conn.transaction():
             await conn.execute(
-                "INSERT INTO generation_audit (audit_id, operation, status, request, evidence, response, "
-                "verification, model, latency_ms, usage) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "INSERT INTO generation_audit (audit_id, request_id, operation, status, request, "
+                "evidence, response, verification, model, latency_ms, usage, prompt_version, "
+                "details) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     payload["audit_id"],
+                    payload.get("request_id"),
                     payload["operation"],
                     payload["status"],
                     Jsonb(payload.get("request", {})),
@@ -457,8 +491,29 @@ class PgVectorStore:
                     payload.get("model"),
                     payload.get("latency_ms"),
                     Jsonb(payload.get("usage")),
+                    payload.get("prompt_version"),
+                    Jsonb(details),
                 ),
             )
+
+    async def get_audit(self, audit_id: str) -> dict[str, Any] | None:
+        async with self.pool.connection() as conn:
+            cur = conn.cursor(row_factory=dict_row)
+            await cur.execute(
+                "SELECT * FROM generation_audit WHERE audit_id::text = %s", (audit_id,)
+            )
+            row = await cur.fetchone()
+        if row is None:
+            return None
+        record: dict[str, Any] = json.loads(json.dumps(row, default=str))
+        return record
+
+    async def purge_audit(self, before: datetime) -> int:
+        async with self.pool.connection() as conn, conn.transaction():
+            cur = await conn.execute(
+                "DELETE FROM generation_audit WHERE created_at < %s", (before,)
+            )
+            return cur.rowcount
 
     async def record_ingestion_run(self, entry: dict[str, Any]) -> None:
         payload = json.loads(json.dumps(entry, default=str))
@@ -467,3 +522,20 @@ class PgVectorStore:
                 "INSERT INTO ingestion_runs (run_id, started_at, finished_at, summary) VALUES (%s, %s, %s, %s)",
                 (payload["run_id"], payload["started_at"], payload["finished_at"], Jsonb(payload)),
             )
+
+    @asynccontextmanager
+    async def ingestion_lock(self) -> AsyncIterator[None]:
+        """Session level advisory lock held on a dedicated connection for the whole run,
+        so a CLI ingestion and an API triggered ingestion can never interleave."""
+        async with self.pool.connection() as conn:
+            row = await (
+                await conn.execute("SELECT pg_try_advisory_lock(%s)", (INGESTION_LOCK_KEY,))
+            ).fetchone()
+            await conn.commit()
+            if not row or not row[0]:
+                raise IngestionLockedError("Another ingestion run is in progress.")
+            try:
+                yield
+            finally:
+                await conn.execute("SELECT pg_advisory_unlock(%s)", (INGESTION_LOCK_KEY,))
+                await conn.commit()

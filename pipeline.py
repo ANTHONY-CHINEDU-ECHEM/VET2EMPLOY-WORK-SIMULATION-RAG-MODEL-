@@ -8,10 +8,20 @@ For each file in the knowledge base directory the pipeline:
 4. embeds chunk text through the cached embedder;
 5. atomically replaces the document in the store;
 6. writes a run summary, including every data quality warning, for review.
+
+Runs hold the store's ingestion lock, so a CLI run and an API triggered run can never
+interleave. File hashing and parsing (PDF layout analysis in particular) run in a worker
+thread so an ingestion triggered through the API never blocks request handling.
+
+With ``prune`` the run also deletes documents whose source file has been removed from the
+knowledge base directory, so withdrawn material stops being retrievable. Pruning is skipped
+when any file failed or the directory holds no supported files, because both usually mean
+a mounting or parsing problem rather than a deliberate withdrawal.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import re
 import time
@@ -30,6 +40,7 @@ from v2e_rag.ingestion.document_parser import parse_docx, parse_pdf
 from v2e_rag.ingestion.excel_loader import WorkbookLoader
 from v2e_rag.ingestion.filename_metadata import infer_file_metadata, strip_upload_prefix
 from v2e_rag.observability.logging import get_logger
+from v2e_rag.observability.metrics import INGESTION_FILES
 from v2e_rag.store.base import VectorStore
 
 log = get_logger(__name__)
@@ -43,6 +54,15 @@ def file_sha256(path: Path) -> str:
         for block in iter(lambda: handle.read(1 << 20), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def list_source_files(directory: Path) -> list[Path]:
+    """Files in the knowledge base directory, ignoring hidden, temporary and lock files."""
+    if not directory.is_dir():
+        raise FileNotFoundError(f"Knowledge base directory {directory} does not exist")
+    return sorted(
+        p for p in directory.iterdir() if p.is_file() and not p.name.startswith((".", "~$"))
+    )
 
 
 def document_id_for(file_name: str) -> str:
@@ -75,6 +95,8 @@ class IngestionReport:
     started_at: datetime
     finished_at: datetime | None = None
     files: list[FileOutcome] = field(default_factory=list)
+    pruned: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
     @property
     def totals(self) -> dict[str, int]:
@@ -96,6 +118,8 @@ class IngestionReport:
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
             "totals": self.totals,
             "files": [f.__dict__ for f in self.files],
+            "pruned": self.pruned,
+            "notes": self.notes,
         }
 
     def to_markdown(self) -> str:
@@ -127,6 +151,12 @@ class IngestionReport:
         if errors:
             lines += ["", "## Errors", ""]
             lines += [f"* {f.file}: {f.error}" for f in errors]
+        if self.pruned:
+            lines += ["", "## Removed documents", ""]
+            lines += [f"* {d}" for d in self.pruned]
+        if self.notes:
+            lines += ["", "## Notes", ""]
+            lines += [f"* {n}" for n in self.notes]
         return "\n".join(lines) + "\n"
 
 
@@ -255,11 +285,20 @@ class IngestionPipeline:
 
     # Orchestration -----------------------------------------------------------------------
 
-    async def ingest_directory(self, directory: Path, force: bool = False) -> IngestionReport:
+    async def ingest_directory(
+        self, directory: Path, force: bool = False, prune: bool = False
+    ) -> IngestionReport:
+        async with self.store.ingestion_lock():
+            return await self._ingest_directory(directory, force, prune)
+
+    async def ingest_single(self, path: Path) -> FileOutcome:
+        """Ingest one file (used by the upload endpoint) under the ingestion lock."""
+        async with self.store.ingestion_lock():
+            return await self.ingest_file(path, force=True)
+
+    async def _ingest_directory(self, directory: Path, force: bool, prune: bool) -> IngestionReport:
         report = IngestionReport(run_id=str(uuid.uuid4()), started_at=datetime.now(UTC))
-        files = sorted(
-            p for p in directory.iterdir() if p.is_file() and not p.name.startswith((".", "~$"))
-        )
+        files = await asyncio.to_thread(list_source_files, directory)
         seen_reference_docs: set[str] = set()
         for path in files:
             if path.suffix.lower() not in SUPPORTED_SUFFIXES:
@@ -272,7 +311,11 @@ class IngestionPipeline:
             report.files.append(
                 await self.ingest_file(path, force=force, seen_reference_docs=seen_reference_docs)
             )
+        if prune:
+            await self._prune(report, files, seen_reference_docs, complete=force)
         report.finished_at = datetime.now(UTC)
+        for outcome in report.files:
+            INGESTION_FILES.labels(status=outcome.status).inc()
         await self.store.record_ingestion_run(
             {
                 "run_id": report.run_id,
@@ -281,8 +324,36 @@ class IngestionPipeline:
                 **report.to_dict(),
             }
         )
-        log.info("ingestion_complete", **report.totals)
+        log.info("ingestion_complete", **report.totals, pruned=len(report.pruned))
         return report
+
+    async def _prune(
+        self,
+        report: IngestionReport,
+        files: list[Path],
+        seen_reference_docs: set[str],
+        complete: bool,
+    ) -> None:
+        if any(f.status == "failed" for f in report.files):
+            report.notes.append("Pruning skipped because at least one file failed to ingest.")
+            return
+        present = {
+            strip_upload_prefix(p.name) for p in files if p.suffix.lower() in SUPPORTED_SUFFIXES
+        }
+        if not present:
+            report.notes.append("Pruning skipped because the directory holds no supported files.")
+            return
+        for document in await self.store.list_documents():
+            is_reference = document.source_type == SourceType.METHODOLOGY
+            if is_reference:
+                # Reference sheets are shared by many workbooks. They are only known to be
+                # orphaned after a forced run has parsed every workbook.
+                stale = complete and document.document_id not in seen_reference_docs
+            else:
+                stale = document.source_file not in present
+            if stale and await self.store.delete_document(document.document_id):
+                report.pruned.append(document.document_id)
+                log.info("document_pruned", document_id=document.document_id)
 
     async def ingest_file(
         self, path: Path, force: bool = False, seen_reference_docs: set[str] | None = None
@@ -291,12 +362,12 @@ class IngestionPipeline:
         name = strip_upload_prefix(path.name)
         outcome = FileOutcome(file=name, status="ingested")
         try:
-            content_hash = file_sha256(path)
+            content_hash = await asyncio.to_thread(file_sha256, path)
             existing = await self.store.get_document(document_id_for(name))
             if existing and existing.content_hash == content_hash and not force:
                 outcome.status = "unchanged"
                 return outcome
-            units, warnings = self.parse_file(path, content_hash)
+            units, warnings = await asyncio.to_thread(self.parse_file, path, content_hash)
             outcome.warnings.extend(warnings)
             for unit in units:
                 if (

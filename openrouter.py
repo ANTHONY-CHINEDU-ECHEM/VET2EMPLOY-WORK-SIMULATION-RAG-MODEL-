@@ -25,17 +25,29 @@ import httpx
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
 from v2e_rag.observability.logging import get_logger
-from v2e_rag.observability.metrics import LLM_REQUESTS, LLM_TOKENS
+from v2e_rag.observability.metrics import LLM_LATENCY, LLM_REQUESTS, LLM_TOKENS
 
 log = get_logger(__name__)
 
 
 class LLMError(RuntimeError):
-    pass
+    """A model call failed. ``status_code`` is the provider HTTP status when known.
+
+    The message may contain provider response text, so it is logged but never returned
+    to API clients (see ``v2e_rag.api.errors``).
+    """
+
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class LLMOutputError(LLMError):
     """The model answered but the content was not valid JSON for the requested schema."""
+
+
+class LLMTruncatedError(LLMOutputError):
+    """The model stopped at the token limit, so its JSON is incomplete."""
 
 
 @dataclass
@@ -129,7 +141,8 @@ def to_strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
             return [visit(v) for v in node]
         return node
 
-    return visit(schema)
+    strict: dict[str, Any] = visit(schema)
+    return strict
 
 
 def _retryable(exc: BaseException) -> bool:
@@ -185,10 +198,22 @@ class OpenRouterClient:
             base_url=base_url.rstrip("/"), headers=headers, timeout=timeout
         )
         self._owns_client = client is None
+        # Structured output modes each model has rejected, so later calls skip straight to
+        # a mode the routed providers accept instead of paying for a failed request.
+        self._rejected_modes: dict[str, set[str]] = {}
 
     async def aclose(self) -> None:
         if self._owns_client:
             await self._client.aclose()
+
+    def _modes_for(self, model: str) -> list[str]:
+        modes = {
+            "json_schema": ["json_schema", "json_object", "prompt"],
+            "json_object": ["json_object", "prompt"],
+        }.get(self.structured_output_mode, ["prompt"])
+        rejected = self._rejected_modes.get(model, set())
+        remaining = [m for m in modes if m not in rejected]
+        return remaining or ["prompt"]
 
     def _payload(
         self,
@@ -241,10 +266,15 @@ class OpenRouterClient:
                 response.raise_for_status()
         assert response is not None
         body = response.json()
-        if isinstance(body, dict) and body.get("error"):
+        if not isinstance(body, dict):
+            raise LLMError("OpenRouter returned a response that is not a JSON object")
+        if body.get("error"):
             error = body["error"]
+            code = error.get("code") if isinstance(error, dict) else None
+            message = error.get("message", error) if isinstance(error, dict) else error
             raise LLMError(
-                f"OpenRouter error {error.get('code', '')}: {error.get('message', error)}"
+                f"OpenRouter error {code or ''}: {message}",
+                status_code=code if isinstance(code, int) else None,
             )
         return body
 
@@ -262,66 +292,94 @@ class OpenRouterClient:
     ) -> LLMResult:
         chosen = model or self.default_model
         fallback_models = self.default_fallbacks if fallbacks is None else fallbacks
-        modes = {
-            "json_schema": ["json_schema", "json_object", "prompt"],
-            "json_object": ["json_object", "prompt"],
-        }.get(self.structured_output_mode, ["prompt"])
         last_error: Exception | None = None
-        for mode in modes:
-            payload = self._payload(
-                messages,
-                chosen,
-                fallback_models,
-                temperature,
-                max_tokens,
-                mode,
-                schema_name,
-                schema,
-            )
-            started = time.perf_counter()
-            try:
-                body = await self._post(payload)
-            except httpx.HTTPStatusError as exc:
-                if _is_unsupported_parameter(exc):
-                    log.warning("structured_output_unsupported", mode=mode, model=chosen)
-                    last_error = exc
-                    continue
-                LLM_REQUESTS.labels(purpose=purpose, model=chosen, outcome="http_error").inc()
-                raise LLMError(
-                    f"OpenRouter HTTP {exc.response.status_code}: {exc.response.text[:500]}"
-                ) from exc
-            except httpx.HTTPError as exc:
-                LLM_REQUESTS.labels(purpose=purpose, model=chosen, outcome="transport_error").inc()
-                raise LLMError(f"OpenRouter transport error: {exc}") from exc
-
-            latency = int((time.perf_counter() - started) * 1000)
-            choices = body.get("choices") or []
-            if not choices:
-                raise LLMError("OpenRouter returned no choices")
-            message = choices[0].get("message") or {}
-            content = message.get("content") or ""
-            if isinstance(content, list):
-                content = "".join(
-                    part.get("text", "") for part in content if isinstance(part, dict)
+        call_started = time.perf_counter()
+        try:
+            for mode in self._modes_for(chosen):
+                payload = self._payload(
+                    messages,
+                    chosen,
+                    fallback_models,
+                    temperature,
+                    max_tokens,
+                    mode,
+                    schema_name,
+                    schema,
                 )
-            usage = {
-                k: int(v)
-                for k, v in (body.get("usage") or {}).items()
-                if isinstance(v, int | float)
-            }
-            used_model = body.get("model", chosen)
-            LLM_REQUESTS.labels(purpose=purpose, model=used_model, outcome="ok").inc()
-            LLM_TOKENS.labels(purpose=purpose, kind="prompt").inc(usage.get("prompt_tokens", 0))
-            LLM_TOKENS.labels(purpose=purpose, kind="completion").inc(
-                usage.get("completion_tokens", 0)
-            )
-            data = extract_json(content)
-            return LLMResult(
-                content=content,
-                data=data,
-                model=used_model,
-                usage=usage,
-                latency_ms=latency,
-                structured_mode=mode,
-            )
-        raise LLMError(f"No structured output mode was accepted: {last_error}")
+                started = time.perf_counter()
+                try:
+                    body = await self._post(payload)
+                except httpx.HTTPStatusError as exc:
+                    if _is_unsupported_parameter(exc):
+                        log.warning("structured_output_unsupported", mode=mode, model=chosen)
+                        self._rejected_modes.setdefault(chosen, set()).add(mode)
+                        last_error = exc
+                        continue
+                    LLM_REQUESTS.labels(purpose=purpose, model=chosen, outcome="http_error").inc()
+                    log.warning(
+                        "openrouter_http_error",
+                        status=exc.response.status_code,
+                        body=exc.response.text[:500],
+                    )
+                    raise LLMError(
+                        f"OpenRouter HTTP {exc.response.status_code}: {exc.response.text[:500]}",
+                        status_code=exc.response.status_code,
+                    ) from exc
+                except httpx.HTTPError as exc:
+                    LLM_REQUESTS.labels(
+                        purpose=purpose, model=chosen, outcome="transport_error"
+                    ).inc()
+                    raise LLMError(f"OpenRouter transport error: {type(exc).__name__}") from exc
+
+                latency = int((time.perf_counter() - started) * 1000)
+                choices = body.get("choices") or []
+                if not choices:
+                    LLM_REQUESTS.labels(purpose=purpose, model=chosen, outcome="no_choices").inc()
+                    raise LLMError("OpenRouter returned no choices")
+                choice = choices[0]
+                if isinstance(choice.get("error"), dict):
+                    LLM_REQUESTS.labels(
+                        purpose=purpose, model=chosen, outcome="provider_error"
+                    ).inc()
+                    raise LLMError(f"Provider error: {choice['error'].get('message', '')[:300]}")
+                message = choice.get("message") or {}
+                content = message.get("content") or ""
+                if isinstance(content, list):
+                    content = "".join(
+                        part.get("text", "") for part in content if isinstance(part, dict)
+                    )
+                usage = {
+                    k: int(v)
+                    for k, v in (body.get("usage") or {}).items()
+                    if isinstance(v, int | float)
+                }
+                used_model = body.get("model", chosen)
+                LLM_TOKENS.labels(purpose=purpose, kind="prompt").inc(usage.get("prompt_tokens", 0))
+                LLM_TOKENS.labels(purpose=purpose, kind="completion").inc(
+                    usage.get("completion_tokens", 0)
+                )
+                if choice.get("finish_reason") == "length":
+                    LLM_REQUESTS.labels(
+                        purpose=purpose, model=used_model, outcome="truncated"
+                    ).inc()
+                    raise LLMTruncatedError(
+                        f"The model reached the {max_tokens} token limit before finishing its JSON. "
+                        "Raise the max tokens setting for this purpose."
+                    )
+                try:
+                    data = extract_json(content)
+                except LLMOutputError:
+                    LLM_REQUESTS.labels(purpose=purpose, model=used_model, outcome="bad_json").inc()
+                    raise
+                LLM_REQUESTS.labels(purpose=purpose, model=used_model, outcome="ok").inc()
+                return LLMResult(
+                    content=content,
+                    data=data,
+                    model=used_model,
+                    usage=usage,
+                    latency_ms=latency,
+                    structured_mode=mode,
+                )
+            raise LLMError(f"No structured output mode was accepted: {last_error}")
+        finally:
+            LLM_LATENCY.labels(purpose=purpose).observe(time.perf_counter() - call_started)

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Protocol
 
 from v2e_rag.domain.models import Chunk, RoleRecord, SourceDocument
@@ -108,7 +110,9 @@ class VectorStore(Protocol):
         embedding_model: str,
     ) -> None: ...
 
-    async def delete_document(self, document_id: str) -> None: ...
+    async def delete_document(self, document_id: str) -> bool:
+        """Delete a document with its chunks and records. Returns whether it existed."""
+        ...
 
     async def semantic_search(
         self, embedding: list[float], filters: SearchFilters, limit: int
@@ -137,4 +141,15 @@ class VectorStore(Protocol):
 
     async def record_audit(self, entry: dict[str, Any]) -> None: ...
 
+    async def get_audit(self, audit_id: str) -> dict[str, Any] | None: ...
+
+    async def purge_audit(self, before: datetime) -> int:
+        """Delete audit records created before ``before``. Returns the number deleted."""
+        ...
+
     async def record_ingestion_run(self, entry: dict[str, Any]) -> None: ...
+
+    def ingestion_lock(self) -> AbstractAsyncContextManager[None]:
+        """Exclusive lock across every process sharing the store, held for a whole
+        ingestion run. Raises ``IngestionLockedError`` when another run holds it."""
+        ...

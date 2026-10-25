@@ -94,45 +94,67 @@ class EvidenceBuilder:
         return pack, list(results)
 
     def assemble(self, results: list[StepResult]) -> EvidencePack:
-        """Admit hits round robin across steps (so every purpose is represented), dedupe by
-        chunk and content, and stop at the token budget. Required steps are admitted first."""
-        ordered = sorted(results, key=lambda r: (not r.step.required,))
-        queues = [list(r.hits) for r in ordered]
-        purposes = [r.step.name for r in ordered]
+        """Build the pack in two passes.
+
+        1. Reservation: the best hit of every required step is admitted first, even if it
+           exceeds the token budget, so a required step that passed the abstention gate is
+           always represented in what the model actually sees.
+        2. Round robin: remaining hits are admitted one per step in turn (so every purpose
+           is represented), deduplicated by chunk and content, until the token budget or
+           the item cap is reached.
+        """
         items: list[EvidenceItem] = []
         seen_chunks: set[str] = set()
         seen_hashes: set[str] = set()
         used_tokens = 0
+
+        def admit(hit: SearchHit, purpose: str) -> None:
+            nonlocal used_tokens
+            chunk = hit.chunk
+            seen_chunks.add(chunk.chunk_id)
+            seen_hashes.add(chunk.content_hash)
+            used_tokens += estimate_tokens(chunk.text)
+            items.append(
+                EvidenceItem(
+                    evidence_id=f"E{len(items) + 1}",
+                    chunk_id=chunk.chunk_id,
+                    facet=chunk.facet,
+                    source_type=chunk.source_type,
+                    authority=chunk.authority,
+                    citation=chunk.citation_label(),
+                    text=chunk.text,
+                    source_url=chunk.source_url,
+                    score=round(hit.final_score, 4),
+                    retrieval_purpose=purpose,
+                )
+            )
+
+        def is_seen(hit: SearchHit) -> bool:
+            return hit.chunk.chunk_id in seen_chunks or hit.chunk.content_hash in seen_hashes
+
+        for result in results:
+            if not result.step.required or not result.hits:
+                continue
+            if any(is_seen(h) for h in result.hits):
+                continue  # already represented through another step
+            admit(result.hits[0], result.step.name)
+
+        ordered = sorted(results, key=lambda r: (not r.step.required,))
+        queues = [list(r.hits) for r in ordered]
+        purposes = [r.step.name for r in ordered]
         progressed = True
         while progressed and len(items) < self.max_items:
             progressed = False
             for queue, purpose in zip(queues, purposes, strict=True):
                 while queue:
                     hit = queue.pop(0)
-                    chunk = hit.chunk
-                    if chunk.chunk_id in seen_chunks or chunk.content_hash in seen_hashes:
+                    if is_seen(hit):
                         continue
-                    cost = estimate_tokens(chunk.text)
+                    cost = estimate_tokens(hit.chunk.text)
                     if used_tokens + cost > self.token_budget and items:
                         queue.clear()
                         break
-                    seen_chunks.add(chunk.chunk_id)
-                    seen_hashes.add(chunk.content_hash)
-                    used_tokens += cost
-                    items.append(
-                        EvidenceItem(
-                            evidence_id=f"E{len(items) + 1}",
-                            chunk_id=chunk.chunk_id,
-                            facet=chunk.facet,
-                            source_type=chunk.source_type,
-                            authority=chunk.authority,
-                            citation=chunk.citation_label(),
-                            text=chunk.text,
-                            source_url=chunk.source_url,
-                            score=round(hit.final_score, 4),
-                            retrieval_purpose=purpose,
-                        )
-                    )
+                    admit(hit, purpose)
                     progressed = True
                     break
                 if len(items) >= self.max_items:

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import date, datetime
+import re
+from datetime import UTC, date, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -163,7 +164,7 @@ class EvidenceItem(BaseModel):
 class EvidencePack(BaseModel):
     items: list[EvidenceItem] = Field(default_factory=list)
     diagnostics: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     def by_id(self) -> dict[str, EvidenceItem]:
         return {item.evidence_id: item for item in self.items}
@@ -175,9 +176,27 @@ class EvidencePack(BaseModel):
         return sum(estimate_tokens(item.text) for item in self.items)
 
     def render(self) -> str:
-        """Render the pack in the exact format the prompts reference."""
+        """Render the pack in the exact format the prompts reference.
+
+        Each passage is fenced in an ``<evidence>`` element. Source text comes from job
+        postings and documents the service does not control, so any tag in it that could
+        close or forge a fence is neutralised before rendering.
+        """
         blocks = []
         for item in self.items:
-            meta = f"{item.source_type.value} | {item.facet.value} | {item.citation}"
-            blocks.append(f"[{item.evidence_id}] ({meta})\n{item.text}")
+            citation = item.citation.replace('"', "'")
+            blocks.append(
+                f'<evidence id="{item.evidence_id}" source="{item.source_type.value}" '
+                f'facet="{item.facet.value}" citation="{citation}">\n'
+                f"{neutralise_tags(item.text)}\n</evidence>"
+            )
         return "\n\n".join(blocks)
+
+
+FENCE_TAGS = ("evidence", "candidate_message", "conversation", "turn", "current_task", "claims")
+_FENCE_RE = re.compile(r"<(/?\s*(?:" + "|".join(FENCE_TAGS) + r")\b)", re.IGNORECASE)
+
+
+def neutralise_tags(text: str) -> str:
+    """Stop untrusted text from opening or closing the fences used in prompts."""
+    return _FENCE_RE.sub(r"&lt;\1", text)

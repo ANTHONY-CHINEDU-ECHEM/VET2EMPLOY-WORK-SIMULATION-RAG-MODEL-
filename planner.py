@@ -337,8 +337,8 @@ class RetrievalPlanner:
         track = (request.track.value,) if request.track else ()
         if request.source_types:
             filters = SearchFilters(
-                source_types=tuple(request.source_types),
-                facets=tuple(request.facets),
+                source_types=tuple(s.value for s in request.source_types),
+                facets=tuple(f.value for f in request.facets),
                 role_families=family,
                 include_untagged_role_family=True,
                 job_levels=(request.job_level.value,) if request.job_level else (),
@@ -363,9 +363,10 @@ class RetrievalPlanner:
         )
         market_sources = (SourceType.JOB_MARKET.value, SourceType.EMPLOYER_REVIEW.value)
         programme_limit = max(1, round(request.limit * 0.6))
+        facets = tuple(f.value for f in request.facets)
         programme = SearchFilters(
             source_types=programme_sources,
-            facets=tuple(request.facets),
+            facets=facets,
             role_families=family,
             include_untagged_role_family=True,
             tracks=track,
@@ -373,7 +374,7 @@ class RetrievalPlanner:
         )
         market = SearchFilters(
             source_types=market_sources,
-            facets=tuple(request.facets),
+            facets=facets,
             role_families=family,
             job_levels=(request.job_level.value,) if request.job_level else (),
             sectors=(request.sector.value,) if request.sector else (),

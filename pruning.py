@@ -8,7 +8,7 @@ from collections import defaultdict
 from v2e_rag.domain.catalog import BrandVoice
 from v2e_rag.llm.schemas import GeneratedTask, GroundedItem, ManagerReply
 from v2e_rag.verification.checks import apply_brand_replacements, normalise_dashes
-from v2e_rag.verification.claims import split_sentences
+from v2e_rag.verification.claims import sentence_spans
 
 _INDEX_RE = re.compile(
     r"^(?P<field>[a-z_]+)\[(?P<index>\d+)\](?:\.acceptance_criteria\[(?P<sub>\d+)\])?$"
@@ -30,16 +30,19 @@ class PruningError(Exception):
 
 
 def _remove_sentences(text: str, indices: set[int]) -> tuple[str, float]:
-    sentences = split_sentences(text)
-    if not sentences:
+    """Remove the sentences at ``indices`` by their exact character spans."""
+    spans = sentence_spans(text)
+    if not spans:
         return text, 0.0
+    valid = sorted(i for i in indices if 0 <= i < len(spans))
     out = text
-    for index in sorted(indices):
-        if index < len(sentences):
-            out = out.replace(sentences[index], "", 1)
+    for index in reversed(valid):
+        start, end = spans[index]
+        out = out[:start] + out[end:]
     out = re.sub(r"[ \t]{2,}", " ", out)
+    out = re.sub(r"[ \t]+\n", "\n", out)
     out = re.sub(r"\n{3,}", "\n\n", out).strip()
-    return out, len(indices) / len(sentences)
+    return out, len(valid) / len(spans)
 
 
 def prune_task(
@@ -55,6 +58,8 @@ def prune_task(
     for claim_id in claim_ids:
         if claim_id == "summary":
             raise PruningError("The task summary is not supported by evidence.")
+        if claim_id == "title":
+            raise PruningError("The task title is not supported by evidence.")
         if claim_id == "schedule":
             data.schedule.assigned_on = None
             data.schedule.due = None
@@ -68,7 +73,9 @@ def prune_task(
             continue
         match = _INDEX_RE.match(claim_id)
         if not match:
-            continue
+            # Fail closed: content the pruner cannot locate must never be returned as if
+            # it had been removed.
+            raise PruningError(f"Unsupported content {claim_id!r} cannot be removed safely.")
         field, index, sub = match.group("field"), int(match.group("index")), match.group("sub")
         if field == "deliverables":
             if sub is None:
@@ -77,6 +84,8 @@ def prune_task(
                 criteria[index].add(int(sub))
         elif field in _LIST_FIELDS:
             list_indices[field].add(index)
+        else:
+            raise PruningError(f"Unsupported content {claim_id!r} cannot be removed safely.")
 
     for field, indices in list_indices.items():
         items = getattr(data, field)
@@ -114,10 +123,15 @@ def prune_reply(
     reply: ManagerReply, claim_ids: set[str], max_loss: float = 0.4
 ) -> tuple[ManagerReply, list[str]]:
     data = reply.model_copy(deep=True)
-    claim_indices = {int(m.group(1)) for c in claim_ids if (m := re.match(r"^claims\[(\d+)\]$", c))}
-    sentence_indices = {
-        int(m.group(1)) for c in claim_ids if (m := re.match(r"^reply\.sentence\[(\d+)\]$", c))
-    }
+    claim_indices: set[int] = set()
+    sentence_indices: set[int] = set()
+    for claim_id in claim_ids:
+        if m := re.match(r"^claims\[(\d+)\]$", claim_id):
+            claim_indices.add(int(m.group(1)))
+        elif m := re.match(r"^reply\.sentence\[(\d+)\]$", claim_id):
+            sentence_indices.add(int(m.group(1)))
+        else:
+            raise PruningError(f"Unsupported content {claim_id!r} cannot be removed safely.")
     data.claims = [c for i, c in enumerate(data.claims) if i not in claim_indices]
     removed = [f"claims[{i}]" for i in sorted(claim_indices)]
     if sentence_indices:

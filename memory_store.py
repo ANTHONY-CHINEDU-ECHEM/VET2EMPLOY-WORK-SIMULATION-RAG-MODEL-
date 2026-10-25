@@ -9,13 +9,19 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import tempfile
 from collections import Counter
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from v2e_rag.domain.models import Chunk, RoleRecord, SourceDocument
+from v2e_rag.errors import IngestionLockedError
 from v2e_rag.store.base import ScoredChunk, SearchFilters, StoreStats
 from v2e_rag.store.lexical import BM25Index
 
@@ -34,6 +40,7 @@ class MemoryStore:
         self.audit: list[dict[str, Any]] = []
         self.ingestion_runs: list[dict[str, Any]] = []
         self._lock = asyncio.Lock()
+        self._ingestion_lock = asyncio.Lock()
 
     # Lifecycle ---------------------------------------------------------------------------
 
@@ -76,9 +83,11 @@ class MemoryStore:
                 self.records[record.record_id] = record
             self.embedding_model = embedding_model
 
-    async def delete_document(self, document_id: str) -> None:
+    async def delete_document(self, document_id: str) -> bool:
         async with self._lock:
+            existed = document_id in self.documents
             self._delete(document_id)
+            return existed
 
     def _delete(self, document_id: str) -> None:
         self.documents.pop(document_id, None)
@@ -185,35 +194,73 @@ class MemoryStore:
             with self.audit_path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(entry, default=str) + "\n")
 
+    async def get_audit(self, audit_id: str) -> dict[str, Any] | None:
+        found = next((e for e in reversed(self.audit) if e.get("audit_id") == audit_id), None)
+        if found is None and self.audit_path and self.audit_path.exists():
+            # Records written by another process (for example the API) live only in the file.
+            for line in self.audit_path.read_text(encoding="utf-8").splitlines():
+                entry = json.loads(line)
+                if entry.get("audit_id") == audit_id:
+                    found = entry
+        return found
+
+    async def purge_audit(self, before: datetime) -> int:
+        def created(entry: dict[str, Any]) -> datetime | None:
+            try:
+                return datetime.fromisoformat(str(entry.get("created_at")))
+            except ValueError:
+                return None
+
+        keep = [e for e in self.audit if (c := created(e)) is None or c >= before]
+        removed = len(self.audit) - len(keep)
+        self.audit = keep
+        return removed
+
     async def record_ingestion_run(self, entry: dict[str, Any]) -> None:
         self.ingestion_runs.append(entry)
+
+    @asynccontextmanager
+    async def ingestion_lock(self) -> AsyncIterator[None]:
+        if self._ingestion_lock.locked():
+            raise IngestionLockedError("Another ingestion run is in progress.")
+        async with self._ingestion_lock:
+            yield
 
     # Snapshot persistence ----------------------------------------------------------------
 
     def save(self, path: Path | None = None) -> Path:
+        """Write a snapshot. Every file is written to a temporary name and renamed, so a
+        crash mid save never leaves a half written snapshot behind."""
         target = path or self.snapshot_path
         if target is None:
             raise ValueError("No snapshot path configured")
         target.mkdir(parents=True, exist_ok=True)
         ids = list(self.chunks)
-        with (target / "documents.jsonl").open("w", encoding="utf-8") as handle:
-            for doc in self.documents.values():
-                handle.write(doc.model_dump_json() + "\n")
-        with (target / "chunks.jsonl").open("w", encoding="utf-8") as handle:
-            for cid in ids:
-                handle.write(self.chunks[cid].model_dump_json() + "\n")
-        with (target / "records.jsonl").open("w", encoding="utf-8") as handle:
-            for record in self.records.values():
-                handle.write(record.model_dump_json() + "\n")
+
+        def write_text(name: str, text: str) -> None:
+            fd, tmp = tempfile.mkstemp(dir=target, prefix=f".{name}.")
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(text)
+            os.replace(tmp, target / name)
+
+        write_text(
+            "documents.jsonl", "".join(d.model_dump_json() + "\n" for d in self.documents.values())
+        )
+        write_text("chunks.jsonl", "".join(self.chunks[c].model_dump_json() + "\n" for c in ids))
+        write_text(
+            "records.jsonl", "".join(r.model_dump_json() + "\n" for r in self.records.values())
+        )
         vectors = (
             np.stack([self.vectors[cid] for cid in ids])
             if ids
             else np.zeros((0, 0), dtype=np.float32)
         )
-        np.save(target / "vectors.npy", vectors)
-        (target / "meta.json").write_text(
-            json.dumps({"embedding_model": self.embedding_model, "chunk_ids": ids}),
-            encoding="utf-8",
+        fd, tmp = tempfile.mkstemp(dir=target, prefix=".vectors.", suffix=".npy")
+        with os.fdopen(fd, "wb") as handle:
+            np.save(handle, vectors)
+        os.replace(tmp, target / "vectors.npy")
+        write_text(
+            "meta.json", json.dumps({"embedding_model": self.embedding_model, "chunk_ids": ids})
         )
         return target
 
