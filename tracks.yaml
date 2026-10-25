@@ -5,6 +5,10 @@
 # the Work Brief so that every chunk inside a track section is tagged with its track code.
 # Names of people, clients and practices are NOT configured here on purpose: they are read
 # from the knowledge base at query time so that nothing is invented.
+#
+# activity_count is the number of sequential activities the brief defines for the track.
+# Requests for an activity number above it are rejected with 422 invalid_request before
+# any retrieval or model call. Update it whenever the brief changes.
 
 tracks:
   DA:
@@ -15,6 +19,7 @@ tracks:
       - 'Track\s*1\s*(:|of\s*4)'
       - '^\s*Data\s+Analyst\s*$'
     manager_title: Track Supervisor
+    activity_count: 12
     retrieval_keywords: [data profiling, data quality, KPI, dashboard, SQL, Power BI, reconciliation]
 
   SE:
@@ -25,6 +30,7 @@ tracks:
       - 'Track\s*2\s*(:|of\s*4)'
       - '^\s*Software\s+Developer\b.*\bEngineer\s*$'
     manager_title: Track Supervisor
+    activity_count: 12
     retrieval_keywords: [API, user stories, repository, continuous integration, testing, code review]
 
   CY:
@@ -35,6 +41,7 @@ tracks:
       - 'Track\s*3\s*(:|of\s*4)'
       - '^\s*Cybersecurity\s*$'
     manager_title: Track Supervisor
+    activity_count: 12
     retrieval_keywords: [incident, phishing, risk register, controls, security posture, investigation]
 
   DE:
@@ -45,4 +52,5 @@ tracks:
       - 'Track\s*4\s*(:|of\s*4)'
       - '^\s*Data\s+Engineering\s*$'
     manager_title: Track Supervisor
+    activity_count: 12
     retrieval_keywords: [pipeline, ingestion, data model, orchestration, data quality tests, warehouse]

@@ -1,0 +1,99 @@
+# Safeguarding screen for candidate messages sent to POST /v1/manager/reply.
+#
+# The screen runs before any model call. It is deterministic and auditable: a model can
+# miss a disclosure, a regular expression written here cannot be talked out of firing.
+# Matching is case insensitive and curly apostrophes are normalised to straight ones.
+#
+# action:
+#   intercept  no model is called. The candidate receives intercept_message (outside the
+#              simulation) and the conversation is flagged for the Programme Office.
+#   flag       the normal grounded reply is generated, and needs_human_review is forced
+#              to true with the review_reason below, whatever the model decided.
+#
+# V2E_SAFEGUARDING_CRISIS_ACTION (intercept or flag) overrides the action of the crisis
+# category only. V2E_SAFEGUARDING_ENABLED=false disables the screen (never in production).
+#
+# PRODUCT OWNER ACTION REQUIRED BEFORE LAUNCH: the Programme Office must review these
+# patterns, the intercept wording and the support contacts, and confirm the human review
+# route and its response time. Phone numbers must be checked against the services' own
+# websites at review time.
+
+version: 1
+
+categories:
+  crisis:
+    action: intercept
+    review_reason: >-
+      Possible risk to the candidate's safety. Contact the candidate today through the
+      Programme Office safeguarding route.
+    patterns:
+      - '\b(kill|killing|hurt|hurting|harm|harming) (myself|my self)\b'
+      - '\bself[ -]?harm'
+      - '\bsuicid'
+      - '\b(end|ending|take|taking) my (own )?life\b'
+      - '\bwant(ed)? to die\b'
+      - '\bbetter off (dead|without me)\b'
+      - '\bno (reason|point) (in )?(living|to live|going on)\b'
+      - "\\bdon'?t want to (be here|live|wake up) any ?more\\b"
+      - '\boverdos'
+
+  wellbeing:
+    action: flag
+    review_reason: >-
+      The candidate describes stress, exhaustion or a mental health concern. Offer support
+      through the Programme Office.
+    patterns:
+      - '\boverwhelm'
+      - "\\b(can'?t|cannot|unable to) cope\\b"
+      - '\bburn(ed|t)? ?out\b'
+      - '\bpanic attack'
+      - '\b(anxiety|anxious|depress(ed|ion)?|ptsd|flashbacks?)\b'
+      - "\\b(not|haven'?t been|can'?t) sleep(ing)?\\b"
+      - '\b(exhausted|breaking down|falling apart)\b'
+      - '\bworking (until|till|past) [0-9]{1,2} ?(am|a\.m\.)'
+
+  harassment:
+    action: flag
+    review_reason: The candidate reports harassment, bullying or threatening behaviour.
+    patterns:
+      - '\bharass'
+      - '\bbull(y|ied|ying)\b'
+      - '\bthreat(en|ened|ening)?\b'
+      - '\binappropriate (comment|message|behaviou?r|contact)'
+      - '\b(abusive|abused)\b'
+
+  discrimination:
+    action: flag
+    review_reason: The candidate raises possible discrimination.
+    patterns:
+      - '\bdiscriminat'
+      - '\b(racis[mt]|sexis[mt]|homophob|transphob|ableis[mt]|ageis[mt])'
+      - '\bbecause (of my|i am|i''m) (race|colour|color|gender|sex|age|religion|disabilit|black|a woman|a veteran|trans|gay)'
+
+  reasonable_adjustments:
+    action: flag
+    review_reason: The candidate asks about reasonable adjustments or accessibility.
+    patterns:
+      - '\breasonable adjustment'
+      - '\b(dyslexi|dyspraxi|adhd|autis|disabilit)'
+      - '\b(accessib|screen reader|extra time|hearing impair|visual(ly)? impair)'
+
+  assessment_fairness:
+    action: flag
+    review_reason: The candidate questions the fairness of an assessment or score.
+    patterns:
+      - '\bunfair'
+      - '\b(appeal|dispute|challenge) (my|the|this) (score|result|mark|assessment|feedback)'
+      - '\b(marked|scored) (me )?(wrong|unfairly|down)\b'
+
+# Shown to the candidate when a category with action intercept fires. It deliberately
+# steps outside the simulation: safety comes before immersion. {name} is replaced with
+# ", <candidate_first_name>" when known and removed otherwise.
+intercept_message: |-
+  Thank you for telling me{name}. I am stepping outside the simulation for a moment because what you have written matters more than this week's work.
+
+  I have asked the Programme Office to contact you personally. You do not need to do anything else on your tasks right now.
+
+  If you are in immediate danger, call 999. You can also call NHS 111 and choose the mental health option, or call Samaritans free on 116 123 at any time of day or night.
+
+  The Programme Office
