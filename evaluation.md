@@ -6,8 +6,8 @@ Quality is measured, not assumed. The service ships with automated tests, a retr
 
 | Suite | Command | What it proves |
 | :--- | :--- | :--- |
-| Unit and contract tests | `make test` | Every parsing rule, filter, fusion and ranking rule, planning step, verification check, pruning rule, the OpenRouter client contract (payload, fallbacks, retries, errors), the full generation pipeline with scripted models, the HTTP contract, and the repository style rules |
-| PostgreSQL integration | `make test-integration` | Migrations and the dimension guard, filtered HNSW search with exact scan fallback, weighted full text search, atomic replacement and cascades, the embedding cache and the audit table |
+| Unit and contract tests | `make test` | Every parsing rule, filter, fusion and ranking rule, planning step, verification check, pruning rule, the OpenRouter client contract (payload, fallbacks, retries, remembered structured output modes, truncation, errors), the full generation pipeline with scripted models, the HTTP contract and error envelope, request limits and deadlines, the safeguarding screen, personal data redaction, prompt fencing, production settings validation, ingestion pruning, the command line, and the repository style rules |
+| PostgreSQL integration | `make test-integration` | Migrations and the dimension guard, concurrent migrations from several processes, filtered HNSW search with exact scan fallback, weighted full text search, atomic replacement and cascades, the embedding cache, audit records with request ids and retention purges, the cross process ingestion lock and the statement timeout |
 | Knowledge base integration | `pytest tests/integration/test_knowledge_base.py` | All supplied files ingest without failure; every track has all 12 activities tagged; client, deliverables, rubric and supervisor sections exist for every track; deliverable file names survive parsing; brand voice and all four role families are covered; reingestion is idempotent; retrieval meets the offline threshold |
 
 The generation pipeline tests use scripted models to prove the safety behaviour deterministically:
@@ -20,14 +20,25 @@ The generation pipeline tests use scripted models to prove the safety behaviour 
 * an unavailable judge fails closed;
 * em dashes and banned terms never reach the candidate;
 * personal data is redacted before a model call;
-* the manager abstains when no evidence answers a message.
+* the manager abstains when no evidence answers a message, and says so in its verdict;
+* a claim the judge skips is asked again and then treated as unsupported;
+* a verdict for a claim that was never asked is ignored;
+* an unsupported task title rejects the task;
+* the pruner refuses content it cannot locate and removes exact sentence spans;
+* every required retrieval step is represented in the evidence pack even when the budget is tight;
+* personal data is removed from every candidate field before the model and the audit trail;
+* candidate text cannot close its prompt fence or forge evidence;
+* a number the candidate asserts is never confirmed by the manager;
+* crisis messages are intercepted without any model call, and flagged messages always reach human review.
+
+CI runs the unit tests together with the PostgreSQL integration tests on two PostgreSQL versions and fails below 80 percent line and branch coverage.
 
 ## 2. Retrieval evaluation
 
 `eval/retrieval_golden.yaml` holds 24 questions across programme rules, all four tracks, brand guidance, the product overview, market evidence and the rating methodology. Relevance is defined by metadata (track, facet, section, company, activity number, text), so the set stays valid after re chunking.
 
 ```bash
-v2e eval-retrieval --k 5
+v2e eval-retrieval --k 5 --min-hit-rate 0.9 --min-mrr 0.6   # exits 1 below the gate
 ```
 
 | Metric | Definition |
@@ -43,10 +54,12 @@ Results are written to `var/reports/retrieval_eval.json` with the top citations 
 
 ## 3. Generation evaluation
 
-`eval/generation_scenarios.yaml` holds 13 scenarios: core activities in every track, a complication, a stakeholder update, a colleague request, a market only task, a deliberately impossible activity (expected to abstain) and three manager replies (a factual question, a question the evidence cannot answer, and a wellbeing concern).
+`eval/generation_scenarios.yaml` holds 19 scenarios: core activities in every track, a complication, a stakeholder update, a colleague request, a market only task, two impossible activities (expected to be rejected as `invalid_request`), manager replies to a factual question, a question the evidence cannot answer and a wellbeing concern, and an adversarial set: a crisis message (expected `intercepted`), a harassment report (expected flag), two prompt injection attempts and a message full of personal data.
+
+Scenarios can assert more than the verdict: `expect_review`, `expect_safeguarding` and `must_not_contain` (text that must never appear in the candidate facing output, such as a system prompt fragment or an injected deadline).
 
 ```bash
-v2e eval-generation
+v2e eval-generation --min-as-expected 0.9   # exits 1 below the gate
 ```
 
 | Measure | Target |
@@ -54,6 +67,7 @@ v2e eval-generation
 | Scenarios behaving as expected | 100 percent |
 | Mean groundedness before pruning | 0.95 or higher |
 | Rejected outputs | 0 on the shipped scenarios |
+| Model errors | 0 (one failing scenario is recorded and the run continues) |
 | p95 latency | Within the Task Engine timeout (120 seconds recommended) |
 
 Results, including the audit id of every scenario, are written to `var/reports/generation_eval.json`.

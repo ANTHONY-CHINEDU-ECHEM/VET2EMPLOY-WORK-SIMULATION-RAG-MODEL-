@@ -1,0 +1,62 @@
+# Prometheus alerting rules for the Vet2Employ RAG service. They implement the alerts
+# described in docs/operations.md. Tune thresholds after the first weeks of real traffic.
+groups:
+  - name: vet2employ_rag
+    rules:
+      - alert: V2ERejectedOutputsHigh
+        expr: |
+          sum(rate(v2e_verification_outcomes_total{verdict="rejected"}[1h]))
+            / clamp_min(sum(rate(v2e_verification_outcomes_total[1h])), 1e-9) > 0.05
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: More than 5 percent of generations rejected by verification
+          runbook: docs/operations.md, runbook "Rising grounding_failed"
+
+      - alert: V2EVerificationUnavailable
+        expr: sum(increase(v2e_verification_outcomes_total{verdict="unavailable"}[10m])) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: The entailment judge is failing, so generations fail closed with 503
+          runbook: docs/operations.md, runbook "OpenRouter degradation"
+
+      - alert: V2EModelErrors
+        expr: |
+          sum(rate(v2e_llm_requests_total{outcome!="ok"}[10m]))
+            / clamp_min(sum(rate(v2e_llm_requests_total[10m])), 1e-9) > 0.1
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: More than 10 percent of OpenRouter calls are failing
+
+      - alert: V2EAbstentionsRising
+        expr: sum(increase(v2e_abstentions_total{operation="task"}[1h])) > 10
+        labels: {severity: warning}
+        annotations:
+          summary: Many task requests lack required evidence
+          runbook: docs/operations.md, runbook "Many insufficient_evidence responses"
+
+      - alert: V2ESafeguardingIntercept
+        expr: sum(increase(v2e_safeguarding_flags_total{action="intercept"}[5m])) > 0
+        labels: {severity: page}
+        annotations:
+          summary: A candidate message was intercepted by the safeguarding screen
+          description: >-
+            The Programme Office must contact the candidate. Find the audit record with
+            status intercepted to identify the conversation.
+
+      - alert: V2EGenerationLatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(v2e_http_request_seconds_bucket{route="/v1/tasks/generate"}[15m]))
+          ) > 60
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: 95th percentile task generation latency is above 60 seconds
+
+      - alert: V2EInternalErrors
+        expr: sum(increase(v2e_http_requests_total{status="500"}[10m])) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: Unexpected internal errors; search the logs by request id

@@ -1,0 +1,101 @@
+# Cloud Run service for the API. Deploy with:
+#   gcloud run services replace deploy/cloud_run/service.yaml --region REGION
+#
+# Replace every value in angle brackets. Secrets live in Secret Manager; the service
+# account needs roles/secretmanager.secretAccessor and roles/alloydb.client.
+# Migrations run from the container entrypoint under an advisory lock. If you prefer to
+# run them as a release step, set V2E_SKIP_MIGRATIONS=true and run `v2e migrate` (for
+# example a copy of job_ingest.yaml with args ["migrate"]) before shifting traffic.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: vet2employ-rag
+  labels:
+    app: vet2employ-rag
+  annotations:
+    # Only the platform (same VPC or project) can call the API.
+    run.googleapis.com/ingress: internal
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "10"
+        # Private IP egress to AlloyDB.
+        run.googleapis.com/network-interfaces: '[{"network":"<VPC_NETWORK>","subnetwork":"<SUBNET>"}]'
+        run.googleapis.com/vpc-access-egress: private-ranges-only
+        run.googleapis.com/startup-cpu-boost: "true"
+    spec:
+      serviceAccountName: <SERVICE_ACCOUNT>@<PROJECT_ID>.iam.gserviceaccount.com
+      # Most time is spent waiting on OpenRouter, so one instance serves many requests.
+      containerConcurrency: 20
+      # Must exceed V2E_REQUEST_TIMEOUT_SECONDS so the service answers 504 itself.
+      timeoutSeconds: 180
+      containers:
+        - image: <REGION>-docker.pkg.dev/<PROJECT_ID>/<REPOSITORY>/vet2employ_rag:<VERSION>
+          ports:
+            - containerPort: 8000
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          env:
+            - name: V2E_ENVIRONMENT
+              value: production
+            - name: V2E_EXPOSE_DOCS
+              value: "false"
+            - name: V2E_WORKERS
+              value: "2"
+            - name: V2E_LOG_JSON
+              value: "true"
+            - name: V2E_REQUEST_TIMEOUT_SECONDS
+              value: "150"
+            - name: V2E_DB_POOL_MAX_SIZE
+              value: "5"
+            - name: V2E_AUDIT_RETENTION_DAYS
+              value: "<DAYS_AGREED_WITH_DATA_PROTECTION>"
+            - name: V2E_OPENROUTER_APP_TITLE
+              value: Vet2Employ RAG Service
+            - name: V2E_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: v2e-database-url
+                  key: latest
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openrouter-api-key
+                  key: latest
+            - name: V2E_API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: v2e-api-keys
+                  key: latest
+            - name: V2E_ADMIN_API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: v2e-admin-api-keys
+                  key: latest
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: 8000
+            periodSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8000
+            periodSeconds: 30
+          volumeMounts:
+            - name: knowledge-base
+              mountPath: /app/knowledge_base/raw
+      volumes:
+        # Read only: in this deployment new material arrives through the bucket and the
+        # ingestion job, not through the upload endpoint.
+        - name: knowledge-base
+          csi:
+            driver: gcsfuse.run.googleapis.com
+            readOnly: true
+            volumeAttributes:
+              bucketName: <KNOWLEDGE_BASE_BUCKET>

@@ -71,11 +71,17 @@ Add a rule under `documents` in the manifest with a glob, a title, a source type
 
 ### A new track
 
-Add the track to `config/tracks.yaml` (code, name, role family, file code and the regular expressions that identify its top level headings in the brief). Activities, deliverables, rubric and client sections are then tagged automatically when the brief is ingested.
+Add the track to `config/tracks.yaml` (code, name, role family, file code, `activity_count` and the regular expressions that identify its top level headings in the brief). Activities, deliverables, rubric and client sections are then tagged automatically when the brief is ingested.
+
+Keep `activity_count` in step with the brief. Requests for a higher activity number are rejected before any retrieval, so a stale count either blocks real activities or lets impossible ones through to retrieval.
 
 ### Removing material
 
-`DELETE /v1/admin/documents/{document_id}` removes a document, its chunks and its role records in one transaction. Document ids are derived from file names, for example `doc_data_analyst_consulting_21st_oct_2026`.
+The simplest way is to delete the file from `knowledge_base/raw/` (or the bucket) and run `v2e ingest --prune` (or `POST /v1/admin/ingest?prune=true`). Pruning removes every document whose source file is no longer present, and is skipped automatically if any file failed to ingest or the directory is empty, because both usually mean a mounting or parsing problem rather than a deliberate withdrawal. Shared reference sheets (the rating methodology and data dictionary) are pruned only on a forced run (`--force --prune`), when every workbook has been parsed.
+
+`DELETE /v1/admin/documents/{document_id}` removes a single document, its chunks and its role records in one transaction, and returns `404` for an unknown id. Remove the source file as well, or the next directory ingestion adds it back. Document ids are derived from file names, for example `doc_data_analyst_consulting_21st_oct_2026`.
+
+Only one ingestion can run at a time across every replica and the command line: runs take a database advisory lock, and a second run fails fast with `ingestion_in_progress` instead of interleaving writes.
 
 ## 4. Normalisation rules
 

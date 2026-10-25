@@ -1,0 +1,3168 @@
+{
+  "components": {
+    "schemas": {
+      "Body_upload_document_v1_admin_documents_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_document_v1_admin_documents_post",
+        "type": "object"
+      },
+      "CatalogResponse": {
+        "properties": {
+          "job_levels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Job Levels",
+            "type": "array"
+          },
+          "knowledge_base": {
+            "additionalProperties": true,
+            "title": "Knowledge Base",
+            "type": "object"
+          },
+          "role_families": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Role Families",
+            "type": "array"
+          },
+          "sectors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sectors",
+            "type": "array"
+          },
+          "task_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Task Types",
+            "type": "array"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/TrackOut"
+            },
+            "title": "Tracks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tracks",
+          "role_families",
+          "sectors",
+          "job_levels",
+          "task_types",
+          "knowledge_base"
+        ],
+        "title": "CatalogResponse",
+        "type": "object"
+      },
+      "CompetencyFocus": {
+        "properties": {
+          "competency": {
+            "enum": [
+              "Technical Quality",
+              "Problem Solving",
+              "Communication",
+              "Delivery",
+              "Professionalism"
+            ],
+            "title": "Competency",
+            "type": "string"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "weight_percent": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight Percent"
+          },
+          "why": {
+            "maxLength": 600,
+            "minLength": 1,
+            "title": "Why",
+            "type": "string"
+          }
+        },
+        "required": [
+          "competency",
+          "why"
+        ],
+        "title": "CompetencyFocus",
+        "type": "object"
+      },
+      "ConversationTurn": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "maxLength": 8000,
+            "title": "Content",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "candidate",
+              "manager"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "ConversationTurn",
+        "type": "object"
+      },
+      "DocumentOut": {
+        "properties": {
+          "collected_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collected On"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "source_file": {
+            "title": "Source File",
+            "type": "string"
+          },
+          "source_type": {
+            "title": "Source Type",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id",
+          "source_file",
+          "title",
+          "source_type",
+          "content_hash"
+        ],
+        "title": "DocumentOut",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "error": {
+            "description": "Stable machine readable code, such as insufficient_evidence.",
+            "title": "Error",
+            "type": "string"
+          },
+          "message": {
+            "description": "Human readable explanation. Safe to log.",
+            "title": "Message",
+            "type": "string"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlates with the X-Request-ID header and service logs.",
+            "title": "Request Id"
+          }
+        },
+        "required": [
+          "error",
+          "message"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "EvidenceReference": {
+        "properties": {
+          "chunk_id": {
+            "description": "Stable knowledge base chunk id. Use it with /v1/verify.",
+            "title": "Chunk Id",
+            "type": "string"
+          },
+          "citation": {
+            "description": "Human readable source label.",
+            "title": "Citation",
+            "type": "string"
+          },
+          "evidence_id": {
+            "description": "Short id used in citations within this response, such as E3.",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "facet": {
+            "title": "Facet",
+            "type": "string"
+          },
+          "retrieval_purpose": {
+            "title": "Retrieval Purpose",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "source_type": {
+            "title": "Source Type",
+            "type": "string"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "chunk_id",
+          "citation",
+          "source_type",
+          "facet",
+          "retrieval_purpose",
+          "score"
+        ],
+        "title": "EvidenceReference",
+        "type": "object"
+      },
+      "Facet": {
+        "description": "The aspect of work a chunk describes. Used to plan retrieval per task section.",
+        "enum": [
+          "programme_rules",
+          "supervisor_voice",
+          "track_client",
+          "track_materials",
+          "track_schedule",
+          "track_activity",
+          "track_deliverables",
+          "track_rubric",
+          "track_stretch",
+          "templates",
+          "brand_voice",
+          "brand_general",
+          "product",
+          "engineering",
+          "responsibilities",
+          "skills_experience",
+          "tech_stack",
+          "team_collaboration",
+          "work_culture",
+          "culture_ratings",
+          "employee_review",
+          "employee_perspective",
+          "methodology",
+          "general"
+        ],
+        "title": "Facet",
+        "type": "string"
+      },
+      "GeneratedTask": {
+        "properties": {
+          "collaboration": {
+            "items": {
+              "$ref": "#/components/schemas/GroundedItem"
+            },
+            "title": "Collaboration",
+            "type": "array"
+          },
+          "competencies": {
+            "items": {
+              "$ref": "#/components/schemas/CompetencyFocus"
+            },
+            "title": "Competencies",
+            "type": "array"
+          },
+          "complications": {
+            "items": {
+              "$ref": "#/components/schemas/GroundedItem"
+            },
+            "title": "Complications",
+            "type": "array"
+          },
+          "context": {
+            "items": {
+              "$ref": "#/components/schemas/GroundedItem"
+            },
+            "title": "Context",
+            "type": "array"
+          },
+          "deliverables": {
+            "items": {
+              "$ref": "#/components/schemas/TaskDeliverable"
+            },
+            "title": "Deliverables",
+            "type": "array"
+          },
+          "message": {
+            "description": "The in character message the candidate receives.",
+            "maxLength": 2500,
+            "minLength": 20,
+            "title": "Message",
+            "type": "string"
+          },
+          "objectives": {
+            "items": {
+              "$ref": "#/components/schemas/GroundedItem"
+            },
+            "minItems": 1,
+            "title": "Objectives",
+            "type": "array"
+          },
+          "open_questions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Open Questions",
+            "type": "array"
+          },
+          "priority": {
+            "enum": [
+              "P0",
+              "P1",
+              "P2"
+            ],
+            "title": "Priority",
+            "type": "string"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/TaskSchedule"
+          },
+          "sender_role": {
+            "description": "Role of the persona sending the message.",
+            "maxLength": 80,
+            "minLength": 2,
+            "title": "Sender Role",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/GroundedItem"
+            },
+            "minItems": 1,
+            "title": "Steps",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/GroundedItem"
+          },
+          "title": {
+            "maxLength": 160,
+            "minLength": 3,
+            "title": "Title",
+            "type": "string"
+          },
+          "tools_and_technologies": {
+            "items": {
+              "$ref": "#/components/schemas/GroundedItem"
+            },
+            "title": "Tools And Technologies",
+            "type": "array"
+          }
+        },
+        "required": [
+          "title",
+          "sender_role",
+          "priority",
+          "message",
+          "summary",
+          "objectives",
+          "steps",
+          "schedule"
+        ],
+        "title": "GeneratedTask",
+        "type": "object"
+      },
+      "GenerationMeta": {
+        "properties": {
+          "audit_id": {
+            "description": "Audit record id. Quote it when reporting an issue.",
+            "title": "Audit Id",
+            "type": "string"
+          },
+          "diagnostics": {
+            "additionalProperties": true,
+            "title": "Diagnostics",
+            "type": "object"
+          },
+          "latency_ms": {
+            "title": "Latency Ms",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "prompt_version": {
+            "title": "Prompt Version",
+            "type": "string"
+          },
+          "usage": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Usage",
+            "type": "object"
+          }
+        },
+        "required": [
+          "audit_id",
+          "model",
+          "prompt_version",
+          "latency_ms"
+        ],
+        "title": "GenerationMeta",
+        "type": "object"
+      },
+      "GroundedItem": {
+        "properties": {
+          "evidence_ids": {
+            "description": "Evidence entries that state this item.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "text": {
+            "description": "One self contained statement.",
+            "maxLength": 1200,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "GroundedItem",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IngestionOutcomeOut": {
+        "properties": {
+          "chunks": {
+            "default": 0,
+            "title": "Chunks",
+            "type": "integer"
+          },
+          "documents": {
+            "default": 0,
+            "title": "Documents",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "file": {
+            "title": "File",
+            "type": "string"
+          },
+          "records": {
+            "default": 0,
+            "title": "Records",
+            "type": "integer"
+          },
+          "seconds": {
+            "default": 0.0,
+            "title": "Seconds",
+            "type": "number"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "file",
+          "status"
+        ],
+        "title": "IngestionOutcomeOut",
+        "type": "object"
+      },
+      "IngestionRunOut": {
+        "additionalProperties": true,
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "files": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/IngestionOutcomeOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Files"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "pruned": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pruned"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "description": "running, completed, failed or conflict.",
+            "title": "Status",
+            "type": "string"
+          },
+          "totals": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Totals"
+          }
+        },
+        "required": [
+          "run_id",
+          "status"
+        ],
+        "title": "IngestionRunOut",
+        "type": "object"
+      },
+      "JobLevel": {
+        "enum": [
+          "beginner",
+          "mid_level",
+          "advanced",
+          "expert"
+        ],
+        "title": "JobLevel",
+        "type": "string"
+      },
+      "ManagerReply": {
+        "properties": {
+          "claims": {
+            "items": {
+              "$ref": "#/components/schemas/GroundedItem"
+            },
+            "title": "Claims",
+            "type": "array"
+          },
+          "intent": {
+            "enum": [
+              "answer",
+              "clarify",
+              "redirect",
+              "feedback",
+              "acknowledge",
+              "escalate"
+            ],
+            "title": "Intent",
+            "type": "string"
+          },
+          "needs_human_review": {
+            "default": false,
+            "title": "Needs Human Review",
+            "type": "boolean"
+          },
+          "reply": {
+            "maxLength": 2500,
+            "minLength": 1,
+            "title": "Reply",
+            "type": "string"
+          },
+          "review_reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Reason"
+          }
+        },
+        "required": [
+          "reply",
+          "intent"
+        ],
+        "title": "ManagerReply",
+        "type": "object"
+      },
+      "ManagerReplyRequest": {
+        "additionalProperties": false,
+        "description": "Ask the AI Manager to reply in character to a candidate message.",
+        "properties": {
+          "candidate_first_name": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate First Name"
+          },
+          "candidate_message": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Candidate Message",
+            "type": "string"
+          },
+          "conversation": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationTurn"
+            },
+            "maxItems": 40,
+            "title": "Conversation",
+            "type": "array"
+          },
+          "current_task_summary": {
+            "anyOf": [
+              {
+                "maxLength": 3000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Task Summary"
+          },
+          "current_task_title": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Task Title"
+          },
+          "job_level": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "manager_name": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manager Name"
+          },
+          "region": {
+            "default": "UK",
+            "pattern": "^[A-Za-z]{2,8}$",
+            "title": "Region",
+            "type": "string"
+          },
+          "role_family": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RoleFamily"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Sector"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "simulation_day": {
+            "anyOf": [
+              {
+                "enum": [
+                  "Monday",
+                  "Tuesday",
+                  "Wednesday",
+                  "Thursday",
+                  "Friday"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Simulation Day"
+          },
+          "track": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "candidate_message"
+        ],
+        "title": "ManagerReplyRequest",
+        "type": "object"
+      },
+      "ManagerReplyResponse": {
+        "properties": {
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/GenerationMeta"
+          },
+          "reply": {
+            "$ref": "#/components/schemas/ManagerReply"
+          },
+          "safeguarding": {
+            "$ref": "#/components/schemas/SafeguardingOut"
+          },
+          "verification": {
+            "$ref": "#/components/schemas/VerificationOut"
+          }
+        },
+        "required": [
+          "reply",
+          "evidence",
+          "verification",
+          "safeguarding",
+          "meta"
+        ],
+        "title": "ManagerReplyResponse",
+        "type": "object"
+      },
+      "RankedItem": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "postings": {
+            "title": "Postings",
+            "type": "integer"
+          },
+          "share": {
+            "title": "Share",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "postings",
+          "share"
+        ],
+        "title": "RankedItem",
+        "type": "object"
+      },
+      "RatingSummary": {
+        "properties": {
+          "employers": {
+            "title": "Employers",
+            "type": "integer"
+          },
+          "max": {
+            "title": "Max",
+            "type": "number"
+          },
+          "mean": {
+            "title": "Mean",
+            "type": "number"
+          },
+          "min": {
+            "title": "Min",
+            "type": "number"
+          }
+        },
+        "required": [
+          "mean",
+          "employers",
+          "min",
+          "max"
+        ],
+        "title": "RatingSummary",
+        "type": "object"
+      },
+      "ReadinessResponse": {
+        "properties": {
+          "checks": {
+            "additionalProperties": true,
+            "title": "Checks",
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "not_ready"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "ReadinessResponse",
+        "type": "object"
+      },
+      "RetrieveRequest": {
+        "additionalProperties": false,
+        "description": "Retrieval only: returns an evidence pack and a grounding prompt for external use.",
+        "properties": {
+          "facets": {
+            "items": {
+              "$ref": "#/components/schemas/Facet"
+            },
+            "maxItems": 30,
+            "title": "Facets",
+            "type": "array"
+          },
+          "include_engineering_reference": {
+            "default": false,
+            "title": "Include Engineering Reference",
+            "type": "boolean"
+          },
+          "job_level": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limit": {
+            "default": 8,
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "query": {
+            "maxLength": 2000,
+            "minLength": 2,
+            "title": "Query",
+            "type": "string"
+          },
+          "role_family": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RoleFamily"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Sector"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_types": {
+            "items": {
+              "$ref": "#/components/schemas/SourceType"
+            },
+            "maxItems": 10,
+            "title": "Source Types",
+            "type": "array"
+          },
+          "track": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "RetrieveRequest",
+        "type": "object"
+      },
+      "RetrieveResponse": {
+        "properties": {
+          "diagnostics": {
+            "additionalProperties": true,
+            "title": "Diagnostics",
+            "type": "object"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/RetrievedEvidence"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "grounding_prompt": {
+            "description": "Ready to use system prompt block containing the grounding rules and this evidence.",
+            "title": "Grounding Prompt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence",
+          "grounding_prompt"
+        ],
+        "title": "RetrieveResponse",
+        "type": "object"
+      },
+      "RetrievedEvidence": {
+        "properties": {
+          "chunk_id": {
+            "description": "Stable knowledge base chunk id. Use it with /v1/verify.",
+            "title": "Chunk Id",
+            "type": "string"
+          },
+          "citation": {
+            "description": "Human readable source label.",
+            "title": "Citation",
+            "type": "string"
+          },
+          "evidence_id": {
+            "description": "Short id used in citations within this response, such as E3.",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "facet": {
+            "title": "Facet",
+            "type": "string"
+          },
+          "retrieval_purpose": {
+            "title": "Retrieval Purpose",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "source_type": {
+            "title": "Source Type",
+            "type": "string"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "chunk_id",
+          "citation",
+          "source_type",
+          "facet",
+          "retrieval_purpose",
+          "score",
+          "text"
+        ],
+        "title": "RetrievedEvidence",
+        "type": "object"
+      },
+      "RoleFamily": {
+        "enum": [
+          "cybersecurity",
+          "data_analyst",
+          "data_engineer",
+          "software_developer"
+        ],
+        "title": "RoleFamily",
+        "type": "string"
+      },
+      "RoleProfileResponse": {
+        "properties": {
+          "culture_ratings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RatingSummary"
+            },
+            "title": "Culture Ratings",
+            "type": "object"
+          },
+          "employers": {
+            "title": "Employers",
+            "type": "integer"
+          },
+          "filters": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Filters",
+            "type": "object"
+          },
+          "job_levels": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Job Levels",
+            "type": "object"
+          },
+          "postings": {
+            "title": "Postings",
+            "type": "integer"
+          },
+          "rating_basis": {
+            "title": "Rating Basis",
+            "type": "string"
+          },
+          "sample_employers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sample Employers",
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "top_skills": {
+            "items": {
+              "$ref": "#/components/schemas/RankedItem"
+            },
+            "title": "Top Skills",
+            "type": "array"
+          },
+          "top_tools": {
+            "items": {
+              "$ref": "#/components/schemas/RankedItem"
+            },
+            "title": "Top Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "filters",
+          "postings",
+          "employers",
+          "job_levels",
+          "top_skills",
+          "top_tools",
+          "culture_ratings",
+          "rating_basis",
+          "sample_employers",
+          "sources"
+        ],
+        "title": "RoleProfileResponse",
+        "type": "object"
+      },
+      "SafeguardingOut": {
+        "properties": {
+          "action": {
+            "description": "none, flag (reply generated, human review forced) or intercept (no model was called; a fixed support message was returned).",
+            "enum": [
+              "none",
+              "flag",
+              "intercept"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "categories": {
+            "description": "Matched categories from config/safeguarding.yaml, such as wellbeing.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "flagged": {
+            "description": "True when any safeguarding category matched.",
+            "title": "Flagged",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "flagged",
+          "action"
+        ],
+        "title": "SafeguardingOut",
+        "type": "object"
+      },
+      "Sector": {
+        "enum": [
+          "construction",
+          "consulting",
+          "education",
+          "healthcare",
+          "information_technology",
+          "general"
+        ],
+        "title": "Sector",
+        "type": "string"
+      },
+      "SourceType": {
+        "description": "Where a piece of evidence comes from. Drives authority and retrieval routing.",
+        "enum": [
+          "programme_brief",
+          "product_overview",
+          "brand_guideline",
+          "engineering_reference",
+          "job_market",
+          "employer_review",
+          "methodology"
+        ],
+        "title": "SourceType",
+        "type": "string"
+      },
+      "TaskDeliverable": {
+        "properties": {
+          "acceptance_criteria": {
+            "items": {
+              "$ref": "#/components/schemas/GroundedItem"
+            },
+            "title": "Acceptance Criteria",
+            "type": "array"
+          },
+          "due": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "file_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exactly as the brief specifies.",
+            "title": "File Name"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Deliverable reference from the brief, such as D2.",
+            "title": "Reference"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "TaskDeliverable",
+        "type": "object"
+      },
+      "TaskRequest": {
+        "additionalProperties": false,
+        "description": "Ask the AI Manager to issue one grounded work item to a candidate.",
+        "properties": {
+          "activity_number": {
+            "anyOf": [
+              {
+                "maximum": 30.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Activity number from the track brief (sequential activities).",
+            "title": "Activity Number"
+          },
+          "candidate_first_name": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate First Name"
+          },
+          "focus": {
+            "anyOf": [
+              {
+                "maxLength": 600,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional emphasis for the task.",
+            "title": "Focus"
+          },
+          "include_market_evidence": {
+            "default": true,
+            "title": "Include Market Evidence",
+            "type": "boolean"
+          },
+          "job_level": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobLevel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Seniority used to select market evidence."
+          },
+          "manager_name": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Persona name supplied by the platform. Never invented.",
+            "title": "Manager Name"
+          },
+          "previous_task_titles": {
+            "items": {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Previous Task Titles",
+            "type": "array"
+          },
+          "region": {
+            "default": "UK",
+            "pattern": "^[A-Za-z]{2,8}$",
+            "title": "Region",
+            "type": "string"
+          },
+          "role_family": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RoleFamily"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Labour market role family. Derived from the track when omitted."
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Sector"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Market sector used to select market evidence."
+          },
+          "simulation_day": {
+            "anyOf": [
+              {
+                "enum": [
+                  "Monday",
+                  "Tuesday",
+                  "Wednesday",
+                  "Thursday",
+                  "Friday"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Simulation Day"
+          },
+          "task_type": {
+            "$ref": "#/components/schemas/TaskType",
+            "default": "core_activity"
+          },
+          "track": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackCode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Week one track code from the Work Brief: DA, SE, CY or DE."
+          }
+        },
+        "title": "TaskRequest",
+        "type": "object"
+      },
+      "TaskResponse": {
+        "properties": {
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/GenerationMeta"
+          },
+          "task": {
+            "$ref": "#/components/schemas/GeneratedTask"
+          },
+          "verification": {
+            "$ref": "#/components/schemas/VerificationOut"
+          }
+        },
+        "required": [
+          "task",
+          "evidence",
+          "verification",
+          "meta"
+        ],
+        "title": "TaskResponse",
+        "type": "object"
+      },
+      "TaskSchedule": {
+        "properties": {
+          "assigned_on": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned On"
+          },
+          "due": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due"
+          },
+          "estimated_effort_hours": {
+            "anyOf": [
+              {
+                "maximum": 80.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Effort Hours"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          }
+        },
+        "title": "TaskSchedule",
+        "type": "object"
+      },
+      "TaskType": {
+        "description": "Kinds of work item the AI Manager can issue inside the simulation.",
+        "enum": [
+          "core_activity",
+          "colleague_request",
+          "stakeholder_update",
+          "complication"
+        ],
+        "title": "TaskType",
+        "type": "string"
+      },
+      "TrackCode": {
+        "description": "The four Vet2Employ week one tracks defined in the Programme Work Brief.",
+        "enum": [
+          "DA",
+          "SE",
+          "CY",
+          "DE"
+        ],
+        "title": "TrackCode",
+        "type": "string"
+      },
+      "TrackOut": {
+        "properties": {
+          "activity_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Highest valid activity_number for this track.",
+            "title": "Activity Count"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "manager_title": {
+            "title": "Manager Title",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role_family": {
+            "title": "Role Family",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "role_family",
+          "manager_title"
+        ],
+        "title": "TrackOut",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "VerificationOut": {
+        "properties": {
+          "checks_run": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Checks Run",
+            "type": "array"
+          },
+          "claims_factual": {
+            "title": "Claims Factual",
+            "type": "integer"
+          },
+          "claims_supported": {
+            "title": "Claims Supported",
+            "type": "integer"
+          },
+          "claims_total": {
+            "title": "Claims Total",
+            "type": "integer"
+          },
+          "entailment_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entailment Error"
+          },
+          "entailment_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entailment Model"
+          },
+          "groundedness": {
+            "description": "Share of factual claims supported by evidence before pruning.",
+            "title": "Groundedness",
+            "type": "number"
+          },
+          "pruned": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pruned",
+            "type": "array"
+          },
+          "repair_attempts": {
+            "title": "Repair Attempts",
+            "type": "integer"
+          },
+          "verdict": {
+            "description": "approved, approved_with_pruning, abstained (no evidence answers the message) or intercepted (the safeguarding screen replaced the reply). Error responses carry rejected or unavailable reports in details.verification.",
+            "title": "Verdict",
+            "type": "string"
+          },
+          "violations": {
+            "items": {
+              "$ref": "#/components/schemas/ViolationOut"
+            },
+            "title": "Violations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "verdict",
+          "groundedness",
+          "claims_total",
+          "claims_factual",
+          "claims_supported",
+          "violations",
+          "pruned",
+          "checks_run",
+          "repair_attempts"
+        ],
+        "title": "VerificationOut",
+        "type": "object"
+      },
+      "VerifyRequest": {
+        "additionalProperties": false,
+        "description": "Verify text produced elsewhere against knowledge base chunks.",
+        "properties": {
+          "chunk_ids": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 40,
+            "minItems": 1,
+            "title": "Chunk Ids",
+            "type": "array"
+          },
+          "text": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "use_entailment": {
+            "default": true,
+            "title": "Use Entailment",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text",
+          "chunk_ids"
+        ],
+        "title": "VerifyRequest",
+        "type": "object"
+      },
+      "VerifyResponse": {
+        "properties": {
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "verification": {
+            "$ref": "#/components/schemas/VerificationOut"
+          }
+        },
+        "required": [
+          "verification",
+          "evidence"
+        ],
+        "title": "VerifyResponse",
+        "type": "object"
+      },
+      "ViolationOut": {
+        "properties": {
+          "check": {
+            "title": "Check",
+            "type": "string"
+          },
+          "claim_id": {
+            "title": "Claim Id",
+            "type": "string"
+          },
+          "details": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Details",
+            "type": "array"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "claim_id",
+          "check",
+          "severity",
+          "message"
+        ],
+        "title": "ViolationOut",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "\nGrounded retrieval augmented generation for the Vet2Employ AI Manager.\n\nEvery output is generated from retrieved evidence only, every claim carries citations, and\nevery response is verified before it is returned. When the knowledge base cannot support a\nrequest the service abstains instead of guessing.\n\nEvery error response uses the same envelope: `error` (a stable code), `message`, `details`\nand `request_id`.\n",
+    "title": "Vet2Employ RAG Service",
+    "version": "1.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/health/live": {
+      "get": {
+        "operationId": "live_health_live_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Live Health Live Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected error"
+          }
+        },
+        "summary": "Live",
+        "tags": [
+          "Operations"
+        ]
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "ready_health_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            },
+            "description": "Not ready"
+          }
+        },
+        "summary": "Ready",
+        "tags": [
+          "Operations"
+        ]
+      }
+    },
+    "/v1/admin/documents": {
+      "get": {
+        "operationId": "list_documents_v1_admin_documents_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-API-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentOut"
+                  },
+                  "title": "Response List Documents V1 Admin Documents Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing admin key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Admin privileges required"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected error"
+          }
+        },
+        "summary": "List Documents",
+        "tags": [
+          "Administration"
+        ]
+      },
+      "post": {
+        "description": "Upload a new or updated knowledge base file and ingest it immediately.",
+        "operationId": "upload_document_v1_admin_documents_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-API-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_document_v1_admin_documents_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestionOutcomeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported or malformed file"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing admin key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Admin privileges required"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An ingestion run is in progress"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "File too large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The file could not be ingested"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected error"
+          }
+        },
+        "summary": "Upload Document",
+        "tags": [
+          "Administration"
+        ]
+      }
+    },
+    "/v1/admin/documents/{document_id}": {
+      "delete": {
+        "description": "Remove a document with its chunks and records. Remove or replace its source file as\nwell, otherwise the next directory ingestion will add it back.",
+        "operationId": "delete_document_v1_admin_documents__document_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-API-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing admin key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Admin privileges required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unknown document"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected error"
+          }
+        },
+        "summary": "Delete Document",
+        "tags": [
+          "Administration"
+        ]
+      }
+    },
+    "/v1/admin/ingest": {
+      "post": {
+        "description": "Ingest every supported file in the configured knowledge base directory in the\nbackground. Unchanged files are skipped unless ``force`` is true. With ``prune``,\ndocuments whose source file has been removed from the directory are deleted.",
+        "operationId": "start_ingestion_v1_admin_ingest_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "prune",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Prune",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-API-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestionRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing admin key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Admin privileges required"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "A run is already in progress"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected error"
+          }
+        },
+        "summary": "Start Ingestion",
+        "tags": [
+          "Administration"
+        ]
+      }
+    },
+    "/v1/admin/ingest/{run_id}": {
+      "get": {
+        "operationId": "ingestion_status_v1_admin_ingest__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-API-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestionRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing admin key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Admin privileges required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unknown run id"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected error"
+          }
+        },
+        "summary": "Ingestion Status",
+        "tags": [
+          "Administration"
+        ]
+      }
+    },
+    "/v1/catalog": {
+      "get": {
+        "description": "Valid filter values and a summary of what the knowledge base contains.",
+        "operationId": "catalog_v1_catalog_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-API-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected error"
+          }
+        },
+        "summary": "Catalog",
+        "tags": [
+          "Knowledge"
+        ]
+      }
+    },
+    "/v1/insights/role_profile": {
+      "get": {
+        "description": "Deterministic profile of a role computed from structured research records: posting\ncounts, the most common skills and tools, and employee culture ratings. No model involved.",
+        "operationId": "role_profile_v1_insights_role_profile_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "role_family",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/RoleFamily"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sector",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Sector"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sector"
+            }
+          },
+          {
+            "in": "query",
+            "name": "job_level",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/JobLevel"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Job Level"
+            }
+          },
+          {
+            "in": "query",
+            "name": "top_n",
+            "required": false,
+            "schema": {
+              "default": 15,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Top N",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-API-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected error"
+          }
+        },
+        "summary": "Role Profile",
+        "tags": [
+          "Knowledge"
+        ]
+      }
+    },
+    "/v1/manager/reply": {
+      "post": {
+        "description": "Answers only from evidence. When evidence does not cover the question the manager\nabstains in character and flags the conversation for human review. Messages that match\nthe safeguarding screen always set ``reply.needs_human_review``; crisis messages are\nanswered with a fixed support message without calling a model.",
+        "operationId": "manager_reply_v1_manager_reply_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-API-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagerReplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagerReplyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request body too large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "invalid_request, insufficient_evidence (nothing was generated) or grounding_failed (output failed verification; see details.audit_id)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "upstream_model_error or invalid_model_output. Retry with backoff."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "verification_unavailable or service_unavailable. Retry with backoff."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "generation_timeout. Retry with backoff."
+          }
+        },
+        "summary": "Reply in character to a candidate message",
+        "tags": [
+          "AI Manager"
+        ]
+      }
+    },
+    "/v1/retrieve": {
+      "post": {
+        "description": "Hybrid retrieval only. Returns cited evidence and a grounding prompt so existing\nOpenRouter calls in the platform can be grounded without changing their flow.",
+        "operationId": "retrieve_v1_retrieve_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-API-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetrieveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrieveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request body too large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "invalid_request, insufficient_evidence (nothing was generated) or grounding_failed (output failed verification; see details.audit_id)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "upstream_model_error or invalid_model_output. Retry with backoff."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "verification_unavailable or service_unavailable. Retry with backoff."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "generation_timeout. Retry with backoff."
+          }
+        },
+        "summary": "Retrieve",
+        "tags": [
+          "Knowledge"
+        ]
+      }
+    },
+    "/v1/tasks/generate": {
+      "post": {
+        "description": "Plans retrieval for the request, generates the task from evidence only, verifies every\nclaim, repairs or prunes anything unsupported, and returns the task with its citations.",
+        "operationId": "generate_task_v1_tasks_generate_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-API-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request body too large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "invalid_request, insufficient_evidence (nothing was generated) or grounding_failed (output failed verification; see details.audit_id)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "upstream_model_error or invalid_model_output. Retry with backoff."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "verification_unavailable or service_unavailable. Retry with backoff."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "generation_timeout. Retry with backoff."
+          }
+        },
+        "summary": "Generate one grounded work item from the AI Manager",
+        "tags": [
+          "AI Manager"
+        ]
+      }
+    },
+    "/v1/verify": {
+      "post": {
+        "description": "Verify any model output (for example one produced directly through OpenRouter)\nagainst the knowledge base chunks it was grounded on. Unknown chunk ids are rejected\nwith ``422 unknown_chunks`` rather than silently ignored.",
+        "operationId": "verify_v1_verify_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-API-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid API key"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request body too large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "invalid_request, insufficient_evidence (nothing was generated) or grounding_failed (output failed verification; see details.audit_id)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "upstream_model_error or invalid_model_output. Retry with backoff."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "verification_unavailable or service_unavailable. Retry with backoff."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "generation_timeout. Retry with backoff."
+          }
+        },
+        "summary": "Verify",
+        "tags": [
+          "Knowledge"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "description": "Grounded tasks and in character replies.",
+      "name": "AI Manager"
+    },
+    {
+      "description": "Retrieval, verification, catalogue and insights.",
+      "name": "Knowledge"
+    },
+    {
+      "description": "Knowledge base operations. Admin key required.",
+      "name": "Administration"
+    },
+    {
+      "description": "Health and readiness probes.",
+      "name": "Operations"
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+# Cloud Run job that ingests the knowledge base bucket. Deploy and run with:
+#   gcloud run jobs replace deploy/cloud_run/job_ingest.yaml --region REGION
+#   gcloud run jobs execute vet2employ-rag-ingest --region REGION --wait
+#
+# --prune removes documents whose source file was withdrawn from the bucket. The run
+# holds a database advisory lock, so it can never overlap another ingestion.
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: vet2employ-rag-ingest
+  annotations:
+    run.googleapis.com/launch-stage: GA
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/network-interfaces: '[{"network":"<VPC_NETWORK>","subnetwork":"<SUBNET>"}]'
+        run.googleapis.com/vpc-access-egress: private-ranges-only
+    spec:
+      taskCount: 1
+      template:
+        spec:
+          serviceAccountName: <SERVICE_ACCOUNT>@<PROJECT_ID>.iam.gserviceaccount.com
+          maxRetries: 1
+          timeoutSeconds: 3600
+          containers:
+            - image: <REGION>-docker.pkg.dev/<PROJECT_ID>/<REPOSITORY>/vet2employ_rag:<VERSION>
+              args: ["ingest", "--prune"]
+              resources:
+                limits:
+                  cpu: "2"
+                  memory: 2Gi
+              env:
+                - name: V2E_ENVIRONMENT
+                  value: production
+                - name: V2E_DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: v2e-database-url
+                      key: latest
+                - name: OPENROUTER_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: openrouter-api-key
+                      key: latest
+                - name: V2E_API_KEYS
+                  valueFrom:
+                    secretKeyRef:
+                      name: v2e-api-keys
+                      key: latest
+                - name: V2E_ADMIN_API_KEYS
+                  valueFrom:
+                    secretKeyRef:
+                      name: v2e-admin-api-keys
+                      key: latest
+              volumeMounts:
+                - name: knowledge-base
+                  mountPath: /app/knowledge_base/raw
+          volumes:
+            - name: knowledge-base
+              csi:
+                driver: gcsfuse.run.googleapis.com
+                readOnly: true
+                volumeAttributes:
+                  bucketName: <KNOWLEDGE_BASE_BUCKET>

@@ -9,6 +9,7 @@ This guide is for the platform developer connecting the Vet2Employ platform to t
 3. Deploy the container. On start it applies migrations and serves on port 8000.
 4. Load the knowledge base once: `docker compose run --rm ingest`, or `POST /v1/admin/ingest` with an admin key, or `v2e ingest` from a job.
 5. Wait for `GET /health/ready` to return `200`. Readiness requires the database, a loaded knowledge base, a configured OpenRouter key and an embedding model that matches the stored vectors.
+6. Run `v2e doctor` in the deployed environment and `scripts/smoke_test.py --base-url <url> --api-key <key>` against the deployed API. Both must report no failures. The full checklist is in [handover.md](handover.md).
 
 ## 2. Authentication and headers
 
@@ -19,6 +20,8 @@ This guide is for the platform developer connecting the Vet2Employ platform to t
 | `Content-Type: application/json` | For POST bodies | |
 
 ## 3. A small typed client
+
+For full coverage of every field, generate a client from the committed schema `docs/openapi.json` (for example with `openapi-typescript`). The hand written client below shows the essentials.
 
 ```typescript
 // v2eRag.ts: minimal client for the Vet2Employ RAG Service
@@ -41,13 +44,25 @@ export interface TaskRequest {
 }
 
 export class RagError extends Error {
-  constructor(public status: number, public code: string, message: string, public details: unknown) {
+  constructor(
+    public status: number,
+    public code: string,
+    message: string,
+    public details: Record<string, unknown>,
+    public requestId: string | null,
+  ) {
     super(message);
+  }
+
+  /** Worth retrying with backoff: the request may succeed later unchanged. */
+  get retryable(): boolean {
+    return [502, 503, 504].includes(this.status);
   }
 }
 
 export class RagClient {
-  constructor(private baseUrl: string, private apiKey: string, private timeoutMs = 120_000) {}
+  // Must exceed V2E_REQUEST_TIMEOUT_SECONDS (150 by default) so the service answers first.
+  constructor(private baseUrl: string, private apiKey: string, private timeoutMs = 170_000) {}
 
   private async post<T>(path: string, body: unknown, requestId: string): Promise<T> {
     const response = await fetch(`${this.baseUrl}${path}`, {
@@ -58,7 +73,8 @@ export class RagClient {
     });
     const payload = await response.json();
     if (!response.ok) {
-      throw new RagError(response.status, payload.error ?? "http_error", payload.message ?? response.statusText, payload.details);
+      // Every error from the service has this envelope: error, message, details, request_id.
+      throw new RagError(response.status, payload.error, payload.message, payload.details ?? {}, payload.request_id ?? null);
     }
     return payload as T;
   }
@@ -92,7 +108,8 @@ export interface TaskResponse {
 }
 export interface ManagerReplyResponse {
   reply: { reply: string; intent: string; needs_human_review: boolean; review_reason: string | null };
-  verification: { verdict: string };
+  verification: { verdict: "approved" | "approved_with_pruning" | "abstained" | "intercepted" };
+  safeguarding: { flagged: boolean; categories: string[]; action: "none" | "flag" | "intercept" };
   meta: { audit_id: string };
 }
 ```
@@ -125,15 +142,19 @@ new Worker("simulation-activities", async (job) => {
       auditId: result.meta.audit_id,
     });
   } catch (error) {
-    if (error instanceof RagError && error.code === "insufficient_evidence") {
-      // The knowledge base cannot support this request. Do not improvise with a raw model call.
-      await flagForContentTeam(candidateId, error.details);
+    if (!(error instanceof RagError)) throw error;
+    if (error.code === "insufficient_evidence" || error.code === "invalid_request") {
+      // The knowledge base or catalogue cannot support this request. Never improvise with a raw model call.
+      await flagForContentTeam(candidateId, error.code, error.details, error.requestId);
       return;
     }
-    if (error instanceof RagError && (error.status === 503 || error.status === 502)) {
-      throw error; // let BullMQ retry with backoff
+    if (error.code === "grounding_failed" && job.attemptsMade === 0) {
+      throw error; // one retry; a second failure is alerted below
     }
-    throw error;
+    if (error.retryable) {
+      throw error; // let BullMQ retry with backoff (502, 503, 504)
+    }
+    await alertEngineering(error.code, error.details.audit_id, error.requestId);
   }
 });
 ```
@@ -185,10 +206,16 @@ const result = await rag.managerReply(
 );
 
 await postManagerMessage(result.reply.reply);
-if (result.reply.needs_human_review) {
+if (result.safeguarding.action === "intercept") {
+  // A crisis message. The reply is a fixed support message written by people.
+  await pageProgrammeOffice(candidate.id, result.reply.review_reason, result.meta.audit_id);
+  await pauseAutomatedTasks(candidate.id);
+} else if (result.reply.needs_human_review) {
   await notifyProgrammeOffice(candidate.id, result.reply.review_reason, result.meta.audit_id);
 }
 ```
+
+Every candidate message passes a safeguarding screen before any model call (see [safeguarding.md](safeguarding.md)). Flagged categories always set `needs_human_review`; crisis messages are intercepted. Make sure intercepts reach a person quickly.
 
 Send at most the last 12 turns; older turns are ignored. Personal data in the message and history is redacted before it reaches any model, and the counts are returned in `meta.diagnostics.pii_redactions`.
 
@@ -242,15 +269,22 @@ Pass `previous_task_titles` so the AI Manager does not repeat itself, and pass `
 
 ## 8. Error handling contract
 
+Every error body is `{"error", "message", "details", "request_id"}`. Log `request_id` with the platform's own request so both sides of an incident can be joined.
+
 | Status | `error` | Meaning | What the platform should do |
 | :--- | :--- | :--- | :--- |
-| 401 | none | Missing or wrong API key | Fix configuration |
+| 401, 403 | `unauthorized`, `forbidden` | Missing or wrong API key | Fix configuration |
+| 409 | `conflict`, `ingestion_in_progress` | Another ingestion run is active | Wait for it to finish |
+| 413 | `payload_too_large` | Body above the limit | Send fewer conversation turns or shorter text |
+| 422 | `invalid_request` | Request fields are invalid or contradict the catalogue (for example an activity number above `activity_count`) | Fix the request; do not retry unchanged |
 | 422 | `insufficient_evidence` | Required evidence is not in the knowledge base | Do not improvise; choose another activity or add material |
 | 422 | `grounding_failed` | Output could not be verified as grounded | Retry once; if repeated, alert and quote `audit_id` |
-| 422 | none (validation) | Request fields are invalid | Fix the request |
+| 422 | `unknown_chunks` | `/v1/verify` received chunk ids that do not exist | Use ids from a recent `/v1/retrieve` response |
+| 500 | `internal_error` | Unexpected failure | Alert with `request_id` |
 | 502 | `upstream_model_error`, `invalid_model_output` | OpenRouter or model failure | Retry with backoff |
-| 503 | `verification_unavailable`, `service_unavailable` | Judge or dependency unavailable | Retry with backoff; never show unverified output |
+| 503 | `verification_unavailable`, `service_unavailable`, `store_unavailable` | Judge or dependency unavailable | Retry with backoff; never show unverified output |
+| 504 | `generation_timeout` | The service deadline passed | Retry with backoff |
 
 ## 9. Performance expectations
 
-A task generation performs one embedding call per distinct planned query, one generation call, one judge call and, only when needed, one repair and one further judge call. Expect latency to be dominated by the generation model; set client timeouts to at least 120 seconds and generate tasks ahead of time in the Task Engine rather than on the request path of the candidate app. Retrieval itself completes in tens of milliseconds on the supplied knowledge base.
+A task generation performs one embedding call per distinct planned query, one generation call, one judge call and, only when needed, one repair and one further judge call. Judge batches run in parallel, so verification adds roughly one judge call of latency however many claims a task has. Expect latency to be dominated by the generation model. The service stops itself at `V2E_REQUEST_TIMEOUT_SECONDS` (150 by default), so set client timeouts slightly above that, and generate tasks ahead of time in the Task Engine rather than on the request path of the candidate app. Retrieval itself completes in tens of milliseconds on the supplied knowledge base.

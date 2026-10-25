@@ -167,13 +167,14 @@ Selection then removes exact duplicates (by content hash), near duplicates (Jacc
 
 ### 5.4 Evidence assembly
 
-Required steps are admitted first, then hits are taken round robin across steps so every purpose is represented, until the token budget (7,000 by default) or item limit (24) is reached. Items receive short ids (`E1`, `E2`, and so on) and human readable citations. If any required step returned nothing, the service raises `InsufficientEvidenceError` and the model is never called.
+The best passage of every required step is reserved first, outside the token budget, so a required step that passed the abstention gate is always represented in what the model sees. Remaining hits are then taken round robin across steps so every purpose is represented, until the token budget (7,000 by default) or item limit (24) is reached. Items receive short ids (`E1`, `E2`, and so on) and human readable citations. If any required step returned nothing, the service raises `InsufficientEvidenceError` and the model is never called.
 
 ## 6. Generation
 
 The generator sends a system prompt (grounding rules, authority order, voice rules, banned vocabulary, task type guidance, priority rule) and a user prompt (the request parameters and the rendered evidence pack) to OpenRouter.
 
-* **Structured output.** `json_schema` with `strict: true` and `require_parameters` routing, so only providers that honour the schema receive the request. If a routed model rejects the parameter, the client falls back to `json_object` and then to prompt only JSON. Pydantic validates the result either way; a schema failure triggers one schema repair call.
+* **Fenced input.** Every evidence passage is wrapped in an `<evidence id="E3" source="..." facet="..." citation="...">` element; candidate text in `<candidate_message>`, `<turn>` and `<current_task>` elements. A grounding rule tells the model that text inside these elements is data, never instructions, and that a fact the candidate asserts is not evidence. Fence tags inside untrusted text are neutralised before rendering (ADR 0004).
+* **Structured output.** `json_schema` with `strict: true` and `require_parameters` routing, so only providers that honour the schema receive the request. If a routed model rejects the parameter, the client falls back to `json_object` and then to prompt only JSON, and remembers the rejection for that model so later calls skip the failing attempt. Output cut off at the token limit is reported as truncated. Pydantic validates the result either way; a schema failure triggers one schema repair call.
 * **Fallbacks.** The OpenRouter `models` list routes to the next model on provider failure.
 * **Retries.** 408, 429 and 5xx responses and transport errors retry with exponential backoff and jitter.
 * **Privacy.** `provider.data_collection` defaults to `deny`.
@@ -200,14 +201,17 @@ flowchart TD
     Q -- "yes" --> REJ["rejected (422) and audited"]
 ```
 
-* **Claims.** Each grounded item is one claim with its own citations. The free text message is split into sentences, each judged against all passages the output cites; greetings and sign offs are labelled `NOT_A_CLAIM` by the judge.
+* **Claims.** Each grounded item is one claim with its own citations. The free text message and the task title are split into sentence claims, each judged against all passages the output cites; greetings and sign offs are labelled `NOT_A_CLAIM` by the judge. The title, summary, objectives and steps are core: if they are unsupported the task is refused rather than pruned.
+* **Judge protocol.** Passages are fenced and claims are sent as a JSON array; verdicts are accepted only for claim ids that were asked. Batches of claims run concurrently (`V2E_VERIFIER_CONCURRENCY`). A claim the judge skips is asked again once and, if still unjudged, is a major violation.
 * **Severity.** Unsupported or partly supported items, invented numbers, names, tools and file names are major. Style issues are minor and are fixed deterministically after repair.
 * **Groundedness** is the share of factual claims supported before pruning and is reported on every response.
-* **Fail closed.** If the judge cannot run while verification is enabled, the request returns `503 verification_unavailable` rather than unverified content.
+* **Fail closed.** If the judge cannot run while verification is enabled, the request returns `503 verification_unavailable` rather than unverified content. Pruning refuses any claim it cannot locate, and removes message sentences by exact character span (ADR 0002).
 
 ## 8. Manager replies
 
-Replies follow the same pipeline with a conversation aware plan: brief content for the track (including programme wide rules), related market practice, and brand voice. Candidate messages and history are redacted for personal data before they leave the service. If no answer bearing evidence passes the similarity threshold, the manager abstains in character, invites the candidate to record an assumption, and sets `needs_human_review`. The prompt also routes wellbeing, fairness and adjustment concerns to the Programme Office, as section 4.6 of the Work Brief requires, and allows an honest answer if a candidate sincerely asks whether they are speaking to an AI, in line with the Brand Strategy Portfolio's AI Manager guidance.
+Every message first passes the deterministic safeguarding screen in `config/safeguarding.yaml` (ADR 0005, `docs/safeguarding.md`). Crisis messages receive a fixed support message with no retrieval and no model call, audited as `intercepted`; other categories force `needs_human_review` on the reply that follows.
+
+Replies then follow the same pipeline with a conversation aware plan: brief content for the track (including programme wide rules), related market practice, and brand voice. The candidate message, every conversation turn and the current task title and summary are redacted for personal data before they leave the service or reach the audit trail. Only the platform supplied task context may license numbers and names in a reply; the candidate's own message cannot, so a manager never confirms a deadline just because the candidate asserted it. If no answer bearing evidence passes the similarity threshold, the manager abstains in character, invites the candidate to record an assumption, and sets `needs_human_review`. The prompt also routes wellbeing, fairness and adjustment concerns to the Programme Office, as section 4.6 of the Work Brief requires, and allows an honest answer if a candidate sincerely asks whether they are speaking to an AI, in line with the Brand Strategy Portfolio's AI Manager guidance.
 
 ## 9. Design decisions
 
@@ -221,6 +225,9 @@ Replies follow the same pipeline with a conversation aware plan: brief content f
 | Independent judge model | Self check by the generator | Avoids a model marking its own work; cheaper model keeps cost low. |
 | Fail closed on verification | Return unverified content | The product promise is evidence over claims; unverified content is a liability. |
 | Deterministic insights endpoint | Ask the model for statistics | Numbers about the market must be exact and reproducible. |
+| Fenced untrusted input | Plain text prompts | Candidate text and scraped postings must not be able to instruct the model or forge evidence (ADR 0004). |
+| Safeguarding screen before any model | Rely on the model to flag concerns | A crisis response must not depend on a model, retrieval or a provider being available (ADR 0005). |
+| Advisory locks for migrations and ingestion | Leader election or manual coordination | Replicas and jobs share one database; the lock makes concurrent starts and runs safe with no extra infrastructure (ADR 0003). |
 
 ## 10. Extension points
 

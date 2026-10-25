@@ -1,0 +1,50 @@
+# Cloud Run job that applies the audit retention period. Trigger it daily with Cloud
+# Scheduler, for example:
+#   gcloud scheduler jobs create http v2e-audit-purge --schedule "15 3 * * *" \
+#     --uri "https://run.googleapis.com/v2/projects/<PROJECT_ID>/locations/<REGION>/jobs/vet2employ-rag-audit-purge:run" \
+#     --http-method POST --oauth-service-account-email <SCHEDULER_SA>
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: vet2employ-rag-audit-purge
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/network-interfaces: '[{"network":"<VPC_NETWORK>","subnetwork":"<SUBNET>"}]'
+        run.googleapis.com/vpc-access-egress: private-ranges-only
+    spec:
+      taskCount: 1
+      template:
+        spec:
+          serviceAccountName: <SERVICE_ACCOUNT>@<PROJECT_ID>.iam.gserviceaccount.com
+          maxRetries: 2
+          timeoutSeconds: 900
+          containers:
+            - image: <REGION>-docker.pkg.dev/<PROJECT_ID>/<REPOSITORY>/vet2employ_rag:<VERSION>
+              args: ["audit", "purge", "--yes"]
+              env:
+                - name: V2E_ENVIRONMENT
+                  value: production
+                - name: V2E_AUDIT_RETENTION_DAYS
+                  value: "<DAYS_AGREED_WITH_DATA_PROTECTION>"
+                - name: V2E_DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: v2e-database-url
+                      key: latest
+                - name: OPENROUTER_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: openrouter-api-key
+                      key: latest
+                - name: V2E_API_KEYS
+                  valueFrom:
+                    secretKeyRef:
+                      name: v2e-api-keys
+                      key: latest
+                - name: V2E_ADMIN_API_KEYS
+                  valueFrom:
+                    secretKeyRef:
+                      name: v2e-admin-api-keys
+                      key: latest
