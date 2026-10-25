@@ -1,104 +1,202 @@
-"""Structured output contracts returned by the AI Manager.
-
-Every factual item carries ``evidence_ids`` so that verification can check each claim
-against the exact passages it relies on. These models are also the public response
-schema of the API, so field names are stable and documented.
-"""
+"""Public response models. These define the OpenAPI contract the platform integrates with."""
 
 from __future__ import annotations
 
-from typing import Literal
+from datetime import date
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-CompetencyName = Literal[
-    "Technical Quality", "Problem Solving", "Communication", "Delivery", "Professionalism"
-]
+from v2e_rag.llm.schemas import GeneratedTask, ManagerReply
 
 
-class _Model(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-
-class GroundedItem(_Model):
-    text: str = Field(min_length=1, max_length=1200, description="One self contained statement.")
-    evidence_ids: list[str] = Field(
-        default_factory=list, description="Evidence entries that state this item."
+class EvidenceReference(BaseModel):
+    evidence_id: str = Field(
+        description="Short id used in citations within this response, such as E3."
     )
+    chunk_id: str = Field(description="Stable knowledge base chunk id. Use it with /v1/verify.")
+    citation: str = Field(description="Human readable source label.")
+    source_type: str
+    facet: str
+    source_url: str | None = None
+    retrieval_purpose: str
+    score: float
 
 
-class TaskDeliverable(_Model):
-    reference: str | None = Field(
-        default=None, description="Deliverable reference from the brief, such as D2."
-    )
-    name: str = Field(min_length=1, max_length=200)
-    format: str | None = Field(default=None, max_length=200)
-    file_name: str | None = Field(
-        default=None, max_length=200, description="Exactly as the brief specifies."
-    )
-    due: str | None = Field(default=None, max_length=100)
-    acceptance_criteria: list[GroundedItem] = Field(default_factory=list)
-    evidence_ids: list[str] = Field(default_factory=list)
-
-
-class CompetencyFocus(_Model):
-    competency: CompetencyName
-    weight_percent: int | None = Field(default=None, ge=0, le=100)
-    why: str = Field(min_length=1, max_length=600)
-    evidence_ids: list[str] = Field(default_factory=list)
-
-
-class TaskSchedule(_Model):
-    assigned_on: str | None = Field(default=None, max_length=60)
-    due: str | None = Field(default=None, max_length=100)
-    estimated_effort_hours: float | None = Field(default=None, ge=0, le=80)
-    evidence_ids: list[str] = Field(default_factory=list)
-
-
-class GeneratedTask(_Model):
-    title: str = Field(min_length=3, max_length=160)
-    sender_role: str = Field(
-        min_length=2, max_length=80, description="Role of the persona sending the message."
-    )
-    priority: Literal["P0", "P1", "P2"]
-    message: str = Field(
-        min_length=20,
-        max_length=2500,
-        description="The in character message the candidate receives.",
-    )
-    summary: GroundedItem
-    context: list[GroundedItem] = Field(default_factory=list)
-    objectives: list[GroundedItem] = Field(min_length=1)
-    steps: list[GroundedItem] = Field(min_length=1)
-    deliverables: list[TaskDeliverable] = Field(default_factory=list)
-    tools_and_technologies: list[GroundedItem] = Field(default_factory=list)
-    collaboration: list[GroundedItem] = Field(default_factory=list)
-    complications: list[GroundedItem] = Field(default_factory=list)
-    competencies: list[CompetencyFocus] = Field(default_factory=list)
-    schedule: TaskSchedule
-    open_questions: list[str] = Field(default_factory=list)
-
-
-ReplyIntent = Literal["answer", "clarify", "redirect", "feedback", "acknowledge", "escalate"]
-
-
-class ManagerReply(_Model):
-    reply: str = Field(min_length=1, max_length=2500)
-    intent: ReplyIntent
-    claims: list[GroundedItem] = Field(default_factory=list)
-    needs_human_review: bool = False
-    review_reason: str | None = Field(default=None, max_length=500)
-
-
-JudgeVerdictLabel = Literal["SUPPORTED", "PARTIAL", "UNSUPPORTED", "NOT_A_CLAIM"]
-
-
-class JudgeVerdict(_Model):
+class ViolationOut(BaseModel):
     claim_id: str
-    verdict: JudgeVerdictLabel
-    unsupported_details: list[str] = Field(default_factory=list)
-    rationale: str = ""
+    check: str
+    severity: str
+    message: str
+    details: list[str] = Field(default_factory=list)
 
 
-class JudgeOutput(_Model):
-    verdicts: list[JudgeVerdict]
+class VerificationOut(BaseModel):
+    verdict: str = Field(
+        description=(
+            "approved, approved_with_pruning, abstained (no evidence answers the message) or "
+            "intercepted (the safeguarding screen replaced the reply). Error responses carry "
+            "rejected or unavailable reports in details.verification."
+        )
+    )
+    groundedness: float = Field(
+        description="Share of factual claims supported by evidence before pruning."
+    )
+    claims_total: int
+    claims_factual: int
+    claims_supported: int
+    violations: list[ViolationOut]
+    pruned: list[str]
+    checks_run: list[str]
+    repair_attempts: int
+    entailment_model: str | None = None
+    entailment_error: str | None = None
+
+
+class GenerationMeta(BaseModel):
+    audit_id: str = Field(description="Audit record id. Quote it when reporting an issue.")
+    model: str
+    prompt_version: str
+    latency_ms: int
+    usage: dict[str, int] = Field(default_factory=dict)
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+
+
+class TaskResponse(BaseModel):
+    task: GeneratedTask
+    evidence: list[EvidenceReference]
+    verification: VerificationOut
+    meta: GenerationMeta
+
+
+class SafeguardingOut(BaseModel):
+    flagged: bool = Field(description="True when any safeguarding category matched.")
+    categories: list[str] = Field(
+        default_factory=list,
+        description="Matched categories from config/safeguarding.yaml, such as wellbeing.",
+    )
+    action: Literal["none", "flag", "intercept"] = Field(
+        description=(
+            "none, flag (reply generated, human review forced) or intercept (no model was "
+            "called; a fixed support message was returned)."
+        )
+    )
+
+
+class ManagerReplyResponse(BaseModel):
+    reply: ManagerReply
+    evidence: list[EvidenceReference]
+    verification: VerificationOut
+    safeguarding: SafeguardingOut
+    meta: GenerationMeta
+
+
+class RetrievedEvidence(EvidenceReference):
+    text: str
+
+
+class RetrieveResponse(BaseModel):
+    evidence: list[RetrievedEvidence]
+    grounding_prompt: str = Field(
+        description="Ready to use system prompt block containing the grounding rules and this evidence."
+    )
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+
+
+class VerifyResponse(BaseModel):
+    verification: VerificationOut
+    evidence: list[EvidenceReference]
+
+
+class TrackOut(BaseModel):
+    code: str
+    name: str
+    role_family: str
+    manager_title: str
+    activity_count: int | None = Field(
+        default=None, description="Highest valid activity_number for this track."
+    )
+
+
+class CatalogResponse(BaseModel):
+    tracks: list[TrackOut]
+    role_families: list[str]
+    sectors: list[str]
+    job_levels: list[str]
+    task_types: list[str]
+    knowledge_base: dict[str, Any]
+
+
+class ErrorResponse(BaseModel):
+    error: str = Field(description="Stable machine readable code, such as insufficient_evidence.")
+    message: str = Field(description="Human readable explanation. Safe to log.")
+    details: dict[str, Any] = Field(default_factory=dict)
+    request_id: str | None = Field(
+        default=None, description="Correlates with the X-Request-ID header and service logs."
+    )
+
+
+class DocumentOut(BaseModel):
+    document_id: str
+    source_file: str
+    title: str
+    source_type: str
+    content_hash: str
+    collected_on: date | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class IngestionOutcomeOut(BaseModel):
+    file: str
+    status: str
+    documents: int = 0
+    chunks: int = 0
+    records: int = 0
+    warnings: list[str] = Field(default_factory=list)
+    error: str | None = None
+    seconds: float = 0.0
+
+
+class IngestionRunOut(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    run_id: str
+    status: str = Field(description="running, completed, failed or conflict.")
+    started_at: str | None = None
+    finished_at: str | None = None
+    totals: dict[str, int] | None = None
+    files: list[IngestionOutcomeOut] | None = None
+    pruned: list[str] | None = None
+    notes: list[str] | None = None
+    error: str | None = None
+
+
+class RankedItem(BaseModel):
+    name: str
+    postings: int
+    share: float
+
+
+class RatingSummary(BaseModel):
+    mean: float
+    employers: int
+    min: float
+    max: float
+
+
+class RoleProfileResponse(BaseModel):
+    filters: dict[str, str | None]
+    postings: int
+    employers: int
+    job_levels: dict[str, int]
+    top_skills: list[RankedItem]
+    top_tools: list[RankedItem]
+    culture_ratings: dict[str, RatingSummary]
+    rating_basis: str
+    sample_employers: list[str]
+    sources: list[str]
+
+
+class ReadinessResponse(BaseModel):
+    status: Literal["ready", "not_ready"]
+    checks: dict[str, Any]

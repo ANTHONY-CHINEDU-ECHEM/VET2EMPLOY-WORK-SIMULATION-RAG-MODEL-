@@ -1,4 +1,10 @@
-"""Service to service authentication with API keys in the ``X-API-Key`` header."""
+"""Service to service authentication with API keys in the ``X-API-Key`` header.
+
+Keys are compared in constant time against every configured key (no early exit), so
+response timing reveals neither whether a key matched nor which one. When no keys are
+configured, development and test environments allow access; every other environment
+fails closed with ``503`` so a misconfigured deployment is never silently open.
+"""
 
 from __future__ import annotations
 
@@ -13,13 +19,18 @@ log = get_logger(__name__)
 
 
 def get_app_settings(request: Request) -> Settings:
-    return request.app.state.container.settings
+    settings: Settings = request.app.state.container.settings
+    return settings
 
 
-def _matches(candidate: str | None, keys: frozenset[str]) -> bool:
+def key_matches(candidate: str | None, keys: frozenset[str]) -> bool:
     if not candidate:
         return False
-    return any(hmac.compare_digest(candidate.encode(), key.encode()) for key in keys)
+    encoded = candidate.encode("utf-8")
+    matched = False
+    for key in keys:
+        matched |= hmac.compare_digest(encoded, key.encode("utf-8"))
+    return matched
 
 
 async def require_api_key(
@@ -28,10 +39,11 @@ async def require_api_key(
 ) -> None:
     keys = settings.api_key_set | settings.admin_api_key_set
     if not keys:
-        if settings.environment in ("development", "test"):
+        if settings.is_local:
             return
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "API keys are not configured")
-    if not _matches(x_api_key, keys):
+    if not key_matches(x_api_key, keys):
+        log.info("authentication_failed", key_present=bool(x_api_key))
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
             "Invalid or missing X-API-Key",
@@ -45,8 +57,35 @@ async def require_admin_key(
 ) -> None:
     keys = settings.admin_api_key_set
     if not keys:
-        if settings.environment in ("development", "test"):
+        if settings.is_local:
             return
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin API keys are not configured")
-    if not _matches(x_api_key, keys):
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "Admin API keys are not configured"
+        )
+    if not x_api_key:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "Missing X-API-Key",
+            headers={"WWW-Authenticate": "ApiKey"},
+        )
+    if not key_matches(x_api_key, keys):
+        log.info("admin_authentication_failed")
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin privileges required")
+
+
+async def require_metrics_token(request: Request) -> None:
+    """Optional bearer token for ``/metrics`` (``V2E_METRICS_TOKEN``)."""
+    settings: Settings = request.app.state.container.settings
+    expected = settings.metrics_token.get_secret_value()
+    if not expected:
+        return
+    header = request.headers.get("authorization", "")
+    scheme, _, token = header.partition(" ")
+    if scheme.lower() != "bearer" or not hmac.compare_digest(
+        token.encode("utf-8"), expected.encode("utf-8")
+    ):
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "Metrics require a bearer token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
