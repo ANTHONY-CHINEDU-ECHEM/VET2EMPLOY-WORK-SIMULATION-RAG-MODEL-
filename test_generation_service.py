@@ -17,6 +17,7 @@ from tests.conftest import (
 from v2e_rag.generation.requests import ManagerReplyRequest, TaskRequest, VerifyRequest
 from v2e_rag.generation.service import GenerationRejected, VerificationUnavailable
 from v2e_rag.llm.openrouter import LLMError
+from v2e_rag.llm.prompts import judge_messages
 from v2e_rag.retrieval.evidence import InsufficientEvidenceError
 
 DA3 = TaskRequest(
@@ -55,7 +56,7 @@ async def test_prompt_contains_only_retrieved_evidence_and_rules(settings, judge
     system, user = messages[0]["content"], messages[1]["content"]
     assert "NON NEGOTIABLE GROUNDING RULES" in system
     assert "chatbot" in system  # banned vocabulary is passed to the model
-    assert "EVIDENCE" in user and "[E1]" in user
+    assert "EVIDENCE" in user and '<evidence id="E1"' in user
     assert schema is not None and "properties" in schema
 
 
@@ -194,7 +195,7 @@ async def test_manager_abstains_without_answer_evidence(settings, judge_chat):
     outcome = await container.service.manager_reply(
         ManagerReplyRequest(track="CY", candidate_message="zzqx unrelated gibberish token")
     )
-    assert outcome.report.verdict == "approved"
+    assert outcome.report.verdict == "abstained"
     assert outcome.output.needs_human_review is True
     assert not [c for c in chat.calls if c[0] == "manager_reply"]
 
@@ -212,13 +213,13 @@ async def test_external_verification(settings, judge_chat):
 
 
 def test_heuristic_judge_is_strict():
-    messages = [
-        {"role": "system", "content": ""},
-        {
-            "role": "user",
-            "content": "PASSAGES\n[E1]\nThe log is due Tue 17:00.\n\nCLAIMS\nc1 | passages: E1 | claim: The log is due Tue 17:00.\nc2 | passages: E1 | claim: Build a churn model.\n\nReturn",
-        },
-    ]
+    messages = judge_messages(
+        {"E1": "The log is due Tue 17:00."},
+        [
+            {"claim_id": "c1", "text": "The log is due Tue 17:00.", "evidence_ids": ["E1"]},
+            {"claim_id": "c2", "text": "Build a churn model.", "evidence_ids": ["E1"]},
+        ],
+    )
     verdicts = {v["claim_id"]: v["verdict"] for v in heuristic_judge(messages)["verdicts"]}
     assert verdicts == {"c1": "SUPPORTED", "c2": "UNSUPPORTED"}
 

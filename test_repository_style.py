@@ -83,9 +83,19 @@ def _prose_lines(markdown: str) -> list[tuple[int, str]]:
     return lines
 
 
+def _markdown_files() -> list[Path]:
+    """Every Markdown file in the repository: README, docs, ADRs, policies and templates."""
+    return sorted(
+        path
+        for path in ROOT.rglob("*.md")
+        if not any(part in SKIP_DIRS or part.endswith(".egg-info") for part in path.parts)
+    )
+
+
 def test_documentation_prose_has_no_hyphens():
     offenders = []
-    docs = [ROOT / "README.md", *sorted((ROOT / "docs").glob("*.md"))]
+    docs = _markdown_files()
+    assert ROOT / "README.md" in docs
     for path in docs:
         if not path.exists():
             continue

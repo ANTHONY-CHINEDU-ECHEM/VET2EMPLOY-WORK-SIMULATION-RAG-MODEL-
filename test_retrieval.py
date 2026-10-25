@@ -144,7 +144,10 @@ async def test_evidence_builder_covers_every_purpose(store):
     assert len({i.chunk_id for i in pack.items}) == len(pack.items)
     assert pack.items[0].facet == Facet.TRACK_ACTIVITY  # required evidence is admitted first
     rendered = pack.render()
-    assert rendered.startswith("[E1] (programme_brief | track_activity | ")
+    assert rendered.startswith(
+        '<evidence id="E1" source="programme_brief" facet="track_activity" citation="'
+    )
+    assert rendered.count("</evidence>") == len(pack.items)
 
 
 async def test_evidence_budget_is_enforced(store):

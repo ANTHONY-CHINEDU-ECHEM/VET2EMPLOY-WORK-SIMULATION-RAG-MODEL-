@@ -216,7 +216,7 @@ async def load_corpus(
 
 # Scripted model fakes -------------------------------------------------------------------
 
-_EVIDENCE_RE = re.compile(r"^\[(E\d+)\] \((\w+) \| (\w+) \| ", re.MULTILINE)
+_EVIDENCE_RE = re.compile(r'^<evidence id="(E\d+)" source="(\w+)" facet="(\w+)"', re.MULTILINE)
 
 
 def evidence_ids_by_facet(messages: list[dict[str, str]]) -> dict[str, list[str]]:
@@ -313,20 +313,13 @@ _GREETING = re.compile(
 def heuristic_judge(messages: list[dict[str, str]]) -> dict[str, Any]:
     """Labels a claim SUPPORTED when most of its content words occur in its passages."""
     content = messages[1]["content"]
-    passages_part, claims_part = content.split("\nCLAIMS\n", 1)
-    passages = {
-        pid: text
-        for pid, text in re.findall(r"\[(E\d+)\]\n(.*?)(?=\n\n\[E\d+\]|\Z)", passages_part, re.S)
-    }
+    passages = dict(re.findall(r'<evidence id="(E\d+)">\n(.*?)\n</evidence>', content, re.S))
+    claims_json = re.search(r"<claims>\n(.*?)\n</claims>", content, re.S)
+    assert claims_json, "judge prompt must carry claims as a JSON array"
     verdicts = []
-    for line in claims_part.splitlines():
-        if " | claim: " not in line:
-            continue
-        head, claim = line.split(" | claim: ", 1)
-        claim_id, ids_part = head.split(" | passages: ")
-        ids = [i.strip() for i in ids_part.split(",") if i.strip() and i.strip() != "ALL"] or list(
-            passages
-        )
+    for item in json.loads(claims_json.group(1)):
+        claim_id, claim = item["claim_id"], item["claim"]
+        ids = [i for i in item["passages"] if i != "ALL"] or list(passages)
         if _GREETING.match(claim.strip()) and len(claim.split()) <= 4:
             verdicts.append(
                 {
