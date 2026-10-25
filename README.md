@@ -6,6 +6,7 @@ This service gives the Vet2Employ simulated working environment a realistic, evi
 
 The realism of the simulation is the entire product, and the AI Manager must behave the way a real manager in that role would. A language model on its own cannot meet that bar. It invents colleagues, deadlines, tools and file names, and every invented detail breaks the realism and undermines the evidence a Verified Profile is built on. This service closes that gap. It keeps the AI Manager inside the facts the programme has defined (clients, activities, deliverables, due points, rubrics, naming rules) and enriches them with what real UK employers actually expect from each role (responsibilities, tools, team structures, culture). Nothing is generated from memory.
 
+Taking over this project? Start with the handover checklist, then read the changelog for what changed.
 
 ## BACKGROUND STUDY: THE JOB SIMULATION MARKET
 
@@ -261,6 +262,7 @@ flowchart LR
 * **Same database as the platform.** pgvector on PostgreSQL matches the existing AlloyDB stack and the `vector(1536)` embeddings already used for artefacts.
 * **Provider agnostic through OpenRouter.** Model choice, fallbacks and privacy routing are configuration, not code.
 
+
 ## How a task is generated
 
 ```mermaid
@@ -313,17 +315,22 @@ A typical response contains the task, the evidence list with human readable cita
 
 ## Hallucination control
 
-Seven independent layers sit between the model and the candidate. Each one catches a different failure.
+Eight independent layers sit between the model and the candidate. Each one catches a different failure, and every one fails closed: when the service cannot prove something is supported, it abstains, prunes or refuses ([ADR 0002](docs/adr/0002_fail_closed_verification.md)).
 
 | Layer | What it enforces | How |
 | :--- | :--- | :--- |
-| 1. Abstention gate | No generation without the evidence a request needs | Required retrieval steps (for example the activity definition) must return evidence or the service returns `insufficient_evidence` before any model call. |
-| 2. Constrained generation | The model may only restate evidence | Explicit grounding rules, an authority order, a numbered evidence pack, and a strict JSON schema in which every factual item carries `evidence_ids`. |
-| 3. Citation integrity | Every claim points at real evidence | Unknown or missing evidence ids are rejected. |
-| 4. Deterministic fact checks | No invented numbers, names, tools or files | Numbers and times must appear in the cited passages; capitalised names must exist in the evidence; tools are fuzzy matched against cited passages; `V2E_` file names must match the brief exactly. |
-| 5. Entailment judge | Meaning is supported, not just words | An independent model on OpenRouter labels each claim against only its cited passages. If the judge is unavailable the request fails closed with `503`. |
-| 6. Repair, prune or refuse | Unsupported content never reaches a candidate | One targeted repair round, then removal of any remaining unsupported optional item. Unsupported core content (summary, objectives, steps) or excessive pruning causes a refusal. |
-| 7. Brand and style rules | The voice the brand defines | Banned vocabulary from the Brand Strategy style sheet (with technical exceptions such as TLS certificates), no em or en dashes, and no breaking character. |
+| 1. Abstention gate | No generation without the evidence a request needs | Required retrieval steps (for example the activity definition) must return evidence or the service returns `insufficient_evidence` before any model call. The best passage of each required step is reserved in the evidence pack, so it is always what the model actually sees. |
+| 2. Fenced input | Untrusted text cannot instruct the model | Candidate messages, history, task context and evidence are wrapped in elements the model treats as data; forged fence tags are neutralised; a candidate's assertions never count as evidence ([ADR 0004](docs/adr/0004_untrusted_input_fencing.md)). |
+| 3. Constrained generation | The model may only restate evidence | Explicit grounding rules, an authority order, a numbered evidence pack, and a strict JSON schema in which every factual item carries `evidence_ids`. |
+| 4. Citation integrity | Every claim points at real evidence | Unknown or missing evidence ids are rejected. |
+| 5. Deterministic fact checks | No invented numbers, names, tools or files | Numbers and times must appear in the cited passages; capitalised names must exist in the evidence; tools are fuzzy matched against cited passages; `V2E_` file names must match the brief exactly. Only platform supplied context, never the candidate's own message, may license a number or a name. |
+| 6. Entailment judge | Meaning is supported, not just words | An independent model on OpenRouter labels each claim, including the task title, against only its cited passages. Claims are sent as JSON so their text cannot forge verdicts. A claim the judge skips is asked again, then treated as unsupported. If the judge is unavailable the request fails closed with `503`. |
+| 7. Repair, prune or refuse | Unsupported content never reaches a candidate | One targeted repair round, then removal of any remaining unsupported optional item by exact span. Unsupported core content (title, summary, objectives, steps), content the pruner cannot locate, or excessive pruning causes a refusal. |
+| 8. Brand and style rules | The voice the brand defines | Banned vocabulary from the Brand Strategy style sheet (with technical exceptions such as TLS certificates), no em or en dashes, and no breaking character. |
+
+### Safeguarding
+
+Every candidate message passes a deterministic screen (`config/safeguarding.yaml`, owned by the Programme Office) before retrieval or any model call. Crisis messages receive a fixed, human written support message and are audited as `intercepted`; wellbeing, harassment, discrimination, reasonable adjustment and assessment fairness concerns always set `needs_human_review`. A model can miss a disclosure; a rule cannot be talked out of firing. See [docs/safeguarding.md](docs/safeguarding.md) and [ADR 0005](docs/adr/0005_deterministic_safeguarding_screen.md).
 
 Every decision is written to `generation_audit` with the prompt version, the evidence ids and the verification report, so any output can be traced back to the exact passages that justified it.
 
@@ -359,7 +366,9 @@ A data quality report is written on every run to `var/reports/ingestion_report.m
 cp .env.example .env              # set OPENROUTER_API_KEY and V2E_API_KEYS
 docker compose up -d db api       # PostgreSQL 16 with pgvector, then the API (migrations run automatically)
 docker compose run --rm ingest    # parse, embed and load the knowledge base
+docker compose run --rm api doctor   # configuration, database, migrations, knowledge base
 curl localhost:8000/health/ready  # "ready" once the knowledge base is loaded
+make smoke API_KEY=change_me_platform_key   # end to end smoke test
 ```
 
 Interactive API documentation is served at `http://localhost:8000/docs`.
@@ -368,11 +377,12 @@ Interactive API documentation is served at `http://localhost:8000/docs`.
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-make install                      # pip install -e ".[dev]"
+make install-locked               # exact versions CI uses, then: make hooks
 cp .env.example .env              # set OPENROUTER_API_KEY and V2E_DATABASE_URL
 make db-up                        # or point V2E_DATABASE_URL at any PostgreSQL with pgvector
 v2e migrate
 v2e ingest
+v2e doctor
 v2e serve
 ```
 
@@ -407,10 +417,11 @@ flowchart TB
     B -->|200| C["Persist task: title, priority,<br/>schedule.due, message, citations"]
     B -->|422 insufficient_evidence| D["Choose another activity or<br/>add knowledge, never improvise"]
     B -->|422 grounding_failed| E["Retry once, then alert;<br/>audit_id explains why"]
-    B -->|503| F["Back off and retry;<br/>verification is unavailable"]
+    B -->|"502, 503, 504"| F["Back off and retry;<br/>never show unverified output"]
     C --> G["Candidate message thread"]
     G --> H["POST /v1/manager/reply"]
     H -->|needs_human_review| I["Route to Programme Office"]
+    H -->|"safeguarding intercept"| J["Page the Programme Office now;<br/>pause automated tasks"]
 ```
 
 Integration essentials (full guide with TypeScript examples in [docs/integration_guide.md](docs/integration_guide.md)):
@@ -418,8 +429,10 @@ Integration essentials (full guide with TypeScript examples in [docs/integration
 1. **Authenticate** every call with `X-API-Key`. Send `X-Request-ID` to correlate logs.
 2. **Pass names, never ask the model to invent them.** Supply `manager_name` and `candidate_first_name` if the persona has a name; otherwise the manager signs off by role.
 3. **Store the citations** with the task. They are the evidence trail behind the simulated work and fit the Task and Artefact nodes in the knowledge graph design.
-4. **Respect the verdict.** Only `approved` and `approved_with_pruning` responses are returned with `200`. Never fall back to an ungrounded model call on `422` or `503`.
-5. **Ground existing prompts** with `/v1/retrieve` and check their output with `/v1/verify` when a flow must stay on direct OpenRouter calls.
+4. **Respect the verdict.** Tasks are returned with `200` only when `approved` or `approved_with_pruning`. Never fall back to an ungrounded model call on `422`, `502`, `503` or `504`.
+5. **Act on safeguarding.** Route `needs_human_review` to the Programme Office and treat `safeguarding.action == "intercept"` as urgent.
+6. **Ground existing prompts** with `/v1/retrieve` and check their output with `/v1/verify` when a flow must stay on direct OpenRouter calls.
+7. **Generate a typed client** from the committed schema `docs/openapi.json`; CI keeps it in step with the code.
 
 ## API at a glance
 
@@ -438,7 +451,7 @@ Integration essentials (full guide with TypeScript examples in [docs/integration
 | `GET` | `/health/live`, `/health/ready` | Liveness and readiness | None |
 | `GET` | `/metrics` | Prometheus metrics | None |
 
-Error contract: every error returns `{"error": "...", "message": "...", "details": {...}}`. The main codes are `insufficient_evidence` (422), `grounding_failed` (422), `verification_unavailable` (503), `upstream_model_error` (502) and `invalid_model_output` (502). Full schemas in [docs/api_reference.md](docs/api_reference.md).
+Error contract: every non 2xx response, whatever produced it, returns `{"error": "...", "message": "...", "details": {...}, "request_id": "..."}`. The main codes are `invalid_request` (422), `insufficient_evidence` (422), `grounding_failed` (422), `unknown_chunks` (422), `payload_too_large` (413), `upstream_model_error` (502), `invalid_model_output` (502), `verification_unavailable` (503), `service_unavailable` (503), `store_unavailable` (503), `generation_timeout` (504) and `internal_error` (500). Full schemas in [docs/api_reference.md](docs/api_reference.md) and [docs/openapi.json](docs/openapi.json).
 
 ## Configuration
 
@@ -458,6 +471,13 @@ All settings are environment variables (prefix `V2E_`) or entries in `.env`. The
 | `V2E_VERIFICATION_ENABLE_ENTAILMENT` | `true` | Judge every claim; fail closed if the judge is down |
 | `V2E_VERIFICATION_MAX_REPAIR_ATTEMPTS` | `1` | Targeted repair rounds before pruning |
 | `V2E_BRAND_NAME` | `Vet2Employ` | Candidate facing product name |
+| `V2E_REQUEST_TIMEOUT_SECONDS` | `150` | Whole request deadline; answers `504` when exceeded |
+| `V2E_SAFEGUARDING_CRISIS_ACTION` | `intercept` | `intercept` (fixed support message, no model) or `flag` |
+| `V2E_AUDIT_RETENTION_DAYS` | not set | Period used by `v2e audit purge` |
+| `V2E_EXPOSE_DOCS` | `true` | Serve `/docs` and `/openapi.json` |
+| `V2E_METRICS_TOKEN` | not set | Bearer token required by `/metrics` when set |
+
+In production the service refuses to start with unsafe settings: missing, short or shared platform and admin keys, no OpenRouter key, the memory backend, the hashing embedder, disabled verification or redaction, or wildcard CORS.
 
 Confirm model availability and pricing on the OpenRouter models page before deployment; every model is configuration only.
 
@@ -465,21 +485,27 @@ Confirm model availability and pricing on the OpenRouter models page before depl
 
 | Suite | Command | Coverage |
 | :--- | :--- | :--- |
-| Unit tests | `make test` | 86 tests: parsing, chunking, filters, fusion, planning, OpenRouter client contracts, every verification check, pruning, the full generation pipeline with scripted models, the HTTP contract and repository style rules |
-| PostgreSQL integration | `make test-integration` | Migrations, dimension guard, filtered HNSW and full text search, atomic replacement, cache and audit |
+| Unit tests | `make test` | 172 tests: parsing, chunking, filters, fusion, planning, OpenRouter client contracts, every verification check including fail closed paths, pruning, the full generation pipeline with scripted models, the HTTP contract and error envelope, safeguarding, redaction, prompt fencing, settings validation, the command line and repository style rules |
+| PostgreSQL integration | `make test-integration` | 17 tests on a real PostgreSQL with pgvector: migrations (including concurrent replicas), dimension guard, filtered HNSW and full text search, atomic replacement, cache, audit and retention, the cross process ingestion lock |
 | Knowledge base integration | `pytest tests/integration/test_knowledge_base.py` | Ingests the real files and asserts track and activity coverage, file names and retrieval quality |
 | Retrieval evaluation | `v2e eval-retrieval` | Hit rate, MRR, precision and nDCG on 24 golden questions |
-| Generation evaluation | `v2e eval-generation` | 13 end to end scenarios: approval rate, groundedness, abstention and latency |
+| Generation evaluation | `v2e eval-generation` | 19 end to end scenarios: approval rate, groundedness, abstention, safeguarding, prompt injection, personal data and latency |
+| Everything a pull request needs | `make check` | Lint, format, strict type checks, unit tests and the OpenAPI schema |
+
+CI runs all of this on every pull request against two PostgreSQL versions with an 80 percent coverage gate, plus compatibility tests on Python 3.11 and 3.13, a dependency audit, a secret scan, and a container build, smoke test and image scan.
 
 Offline baseline (lexical stand in embedder, no network): **hit rate at 5 of 1.00 in memory and 0.96 on PostgreSQL, with MRR between 0.74 and 0.78** on the golden set. Run `v2e eval-retrieval` after ingesting with the production embedding model to record the production baseline, and keep it as a regression gate. See [docs/evaluation.md](docs/evaluation.md).
 
 ## Operations and security
 
-* **Deployment.** One stateless container (`Dockerfile`) plus PostgreSQL with pgvector. It suits Cloud Run with AlloyDB in the existing GCP footprint, or any container platform.
-* **Observability.** Structured JSON logs with request ids; Prometheus metrics for latency, model calls, tokens, verification verdicts, unsupported claims and abstentions.
-* **Privacy.** Emails, phone numbers, postcodes, card and account numbers and National Insurance numbers are redacted from candidate messages before they reach a model, matching the data handling rules in section 4.2 of the Work Brief. OpenRouter routing defaults to providers that do not collect data.
-* **Access.** Separate platform and admin keys, constant time comparison, upload type and size limits, non root container user.
-* **Confidentiality.** Knowledge base files are excluded from version control by `.gitignore`; distribute them through an approved channel.
+* **Deployment.** One stateless container (`Dockerfile`, built from the pinned lock file) plus PostgreSQL with pgvector. Templates for Cloud Run with AlloyDB are in `deploy/cloud_run/`; it runs on any container platform. Migrations and ingestion take database advisory locks, so replicas and jobs can start together safely.
+* **Observability.** Structured JSON logs with request ids and secret scrubbing; Prometheus metrics for latency, requests in flight, model calls and latency, tokens, verification verdicts, unsupported claims, abstentions and safeguarding flags; alert rules in `deploy/prometheus/alerts.yaml`.
+* **Privacy.** Emails, phone numbers, postcodes, card, account and IBAN numbers, National Insurance numbers and credentials are redacted from every candidate field before they reach a model or the audit trail, matching the data handling rules in section 4.2 of the Work Brief. OpenRouter routing defaults to providers that do not collect data. Audit records are purged after the configured retention period (`v2e audit purge`).
+* **Access.** Separate platform and admin keys, constant time comparison, production settings validation, body size limits, upload signature checks, defensive headers, a non root container that cannot modify its own code.
+* **Operations tooling.** `v2e doctor` checks an environment in one command; `scripts/smoke_test.py` proves a deployment end to end.
+* **Confidentiality.** Knowledge base files are excluded from version control by `.gitignore` and a pre commit hook; distribute them through an approved channel.
+
+The threat model and residual risks are in [docs/security.md](docs/security.md).
 
 Runbooks, scaling guidance and audit queries are in [docs/operations.md](docs/operations.md).
 
@@ -487,13 +513,20 @@ Runbooks, scaling guidance and audit queries are in [docs/operations.md](docs/op
 
 ```text
 vet2employ_rag/
-  config/                  tracks, knowledge manifest, brand vocabulary (YAML)
-  migrations/              SQL schema (pgvector, HNSW, full text, audit)
-  knowledge_base/raw/      source documents and research workbooks
+  config/                  tracks, knowledge manifest, brand vocabulary, safeguarding rules (YAML)
+  migrations/              SQL schema (pgvector, HNSW, full text, audit, retention)
+  knowledge_base/raw/      source documents and research workbooks (not in git)
   eval/                    golden retrieval set and generation scenarios
-  docs/                    architecture, API, integration, knowledge base, operations, evaluation
+  docs/                    handover, architecture, API, OpenAPI schema, integration, knowledge base,
+                           operations, evaluation, security, safeguarding, decision records (adr/)
+  deploy/                  Cloud Run service and jobs, Prometheus alert rules
+  requirements/            pinned dependency versions for images and CI
+  scripts/                 smoke test and lock file helper
+  .github/                 CI, release, Dependabot, CODEOWNERS, templates
   src/v2e_rag/
-    api/                   FastAPI app, routes, schemas, security
+    api/                   FastAPI app, middleware, error contract, routes, schemas, security
+    safeguarding.py        deterministic screen for candidate messages
+    errors.py              service exceptions mapped to public error codes
     domain/                models, controlled vocabularies, config loaders
     ingestion/             PDF, Word and Excel parsing, chunking, pipeline
     embeddings/            OpenRouter embedder, cache, offline embedder
@@ -517,16 +550,25 @@ These points came out of the source material and need a decision; the code makes
 2. **Persona names.** The Work Brief names client personas (for example Priya Raman at Kestrel Lane) but not the track supervisors. The service never invents a supervisor name; pass `manager_name` when the platform defines one.
 3. **Database host.** The Plain English Report names Supabase while the Knowledge Graph design names AlloyDB. Both are PostgreSQL with pgvector, so either works without code changes.
 4. **Regions.** The evidence is UK only. Requests for Canada or Australia are accepted, but realism for those markets needs region specific material in the knowledge base.
+5. **Safeguarding.** The Programme Office must review `config/safeguarding.yaml` (patterns, intercept wording and support contacts), confirm the human review route and its response time, and decide whether crisis messages are intercepted (default) or flagged.
+6. **Audit retention.** Agree a retention period for the audit trail with data protection and set `V2E_AUDIT_RETENTION_DAYS`; until then records are kept indefinitely.
 
 ## Further documentation
 
 | Document | Contents |
 | :--- | :--- |
+| [docs/handover.md](docs/handover.md) | Step by step path from receiving the repository to production |
+| [CHANGELOG.md](CHANGELOG.md) | What changed in each release, including contract changes |
 | [docs/architecture.md](docs/architecture.md) | Components, data model, chunking, ranking formula, verification pipeline and design decisions |
 | [docs/integration_guide.md](docs/integration_guide.md) | Step by step integration for the platform developer, with TypeScript examples |
 | [docs/api_reference.md](docs/api_reference.md) | Every endpoint, request and response field, and error |
 | [docs/knowledge_base.md](docs/knowledge_base.md) | Adding and updating material, the manifest, facets and data quality findings |
 | [docs/operations.md](docs/operations.md) | Deployment, scaling, monitoring, audit queries and runbooks |
 | [docs/evaluation.md](docs/evaluation.md) | Metrics, golden sets, acceptance thresholds and how to extend them |
+| [docs/security.md](docs/security.md) | Threat model, controls and residual risks |
+| [docs/safeguarding.md](docs/safeguarding.md) | The safeguarding screen and what the Programme Office must do |
+| [docs/adr/](docs/adr/README.md) | Architecture decision records |
+| [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md) | How to change the service safely, and how to report a vulnerability |
 
 Copyright Phexara Limited. All rights reserved. Every client, person, dataset and incident in the Work Brief is fictitious and created for training purposes by Phexara Limited.
+
